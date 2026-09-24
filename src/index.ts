@@ -7,9 +7,11 @@
  * the input the official goal-round driver reads at every idle.
  */
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { GoalView } from '@deepseek-ai/dsh-goal'
-import type { JobView } from '@deepseek-ai/dsh-jobs'
+import type {} from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-goal'
+import type {} from '@deepseek-ai/dsh-jobs'
+import type { Config } from './config.ts'
+import { GoalWaitGate } from './gate.ts'
 
 /** Registered plugin name. */
 export const name = 'goal-wait-gate'
@@ -17,33 +19,27 @@ export const name = 'goal-wait-gate'
 /** Services this plugin cannot work without. */
 export const inject = ['agents', 'goals']
 
-/** Gate policy. Every field is optional and validated at load time. */
-export interface Config {
-  /** Hold continuation while the session owns running or stopping jobs. */
-  readonly waitForJobs?: boolean
-  /** Hold continuation while the session owns live subagent descendants. */
-  readonly waitForSubagents?: boolean
-  /** Release a hold after this many milliseconds; `0` holds indefinitely. */
-  readonly maxHoldMs?: number
-}
+export type { Config } from './config.ts'
 
 /**
  * Mount the gate.
  *
  * @param ctx - the plugin context carrying the agent registry and goal service.
- * @param _config - gate policy; defaults hold on both signals indefinitely.
+ * @param config - gate policy; defaults hold on every available signal.
  */
-export function apply(ctx: Context, _config: Config = {}): void {
-  const evaluate = (agent: Agent): void => {
-    const goal: GoalView | undefined = ctx.goals.get(agent)
-    void goal
-  }
+export function apply(ctx: Context, config: Config = {}): void {
+  const gate = new GoalWaitGate(ctx, config)
+
+  // Primary checkpoint: the turn loop awaits this before the agent turns idle,
+  // so the goal is already gated when the official driver's idle check runs.
   ctx.on('agent/turn-stopping', ({ agent }) => {
-    evaluate(agent)
+    gate.evaluate(agent)
   })
+
+  // Safety net for turn shapes that end without turn-stopping.
   ctx.on('agent/status', ({ agent, status }) => {
     if (status !== 'idle') return
-    evaluate(agent)
+    gate.evaluate(agent)
   }, { prepend: true })
 }
 
