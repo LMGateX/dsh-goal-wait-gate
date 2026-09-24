@@ -11,6 +11,7 @@ import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-goal'
 import type {} from '@deepseek-ai/dsh-jobs'
 import type { Config } from './config.ts'
+import { resolveConfig } from './config.ts'
 import { GoalWaitGate } from './gate.ts'
 
 /** Registered plugin name. */
@@ -28,7 +29,7 @@ export type { Config } from './config.ts'
  * @param config - gate policy; defaults hold on every available signal.
  */
 export function apply(ctx: Context, config: Config = {}): void {
-  const gate = new GoalWaitGate(ctx, config)
+  const gate = new GoalWaitGate(ctx, resolveConfig(config))
 
   // Primary checkpoint: the turn loop awaits this before the agent turns idle,
   // so the goal is already gated when the official driver's idle check runs.

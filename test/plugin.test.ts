@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHarness } from './harness.ts'
+import type { Config } from '../src/index.ts'
 
 test('with no background work the gate consults the goal and mutates nothing', async () => {
   const harness = await createHarness()
@@ -50,7 +51,7 @@ test('a settled job releases the hold after its notice turn ends, resuming exact
   harness.idle(agent)
   assert.equal(harness.goals.peek(agent)?.activation, 'disarmed', 'held while the job runs')
 
-  harness.jobs.settle(job.id)
+  harness.settle(job)
   await harness.turnStopping(agent)
   assert.equal(harness.goals.byKind('resume').length, 1, 'the gate resumes exactly once when the notice turn ends')
   assert.equal(harness.goals.peek(agent)?.activation, 'armed', 'the goal is armed again')
@@ -127,7 +128,7 @@ test('a human re-arm wins: the gate drops its hold and does not re-disarm during
   const harness = await createHarness()
   const agent = harness.agent('agent-1')
   const goal = harness.goal(agent)
-  harness.job(agent)
+  const job = harness.job(agent)
 
   await harness.turnStopping(agent)
   assert.equal(harness.goals.peek(agent)?.activation, 'disarmed', 'gated while the job runs')
@@ -141,7 +142,7 @@ test('a human re-arm wins: the gate drops its hold and does not re-disarm during
   assert.equal(harness.goals.byKind('disarm').length, 1, 'no second disarm during the same wait')
 
   // A later episode, after the work is gone, gates normally again.
-  harness.jobs.settle('job-1')
+  harness.settle(job)
   await harness.turnStopping(agent)
   harness.job(agent)
   await harness.turnStopping(agent)
@@ -160,7 +161,7 @@ test('a goal paused while held is dropped and never resumed', async () => {
   assert.equal(harness.goals.byKind('disarm').length, 1)
 
   harness.goals.pause(agent, { id: goal.id, revision: goal.revision })
-  harness.jobs.settle(job.id)
+  harness.settle(job)
   await harness.turnStopping(agent)
   assert.equal(harness.goals.byKind('resume').length, 0, 'a paused goal is not resumed')
 
@@ -180,7 +181,7 @@ test('an edit while held still releases with the current revision', async () => 
   assert.ok(live !== undefined)
   live.revision = editedRevision
   live.objective = 'edited objective'
-  harness.jobs.settle(job.id)
+  harness.settle(job)
 
   await harness.turnStopping(agent)
   const resumes = harness.goals.byKind('resume')
@@ -246,7 +247,7 @@ test('an agent disposed while held is forgotten before unload', async () => {
   await harness.turnStopping(agent)
   assert.equal(harness.goals.byKind('disarm').length, 1)
 
-  harness.jobs.settle(job.id)
+  harness.settle(job)
   harness.agents.drop('agent-1')
   await harness.unload()
   assert.equal(harness.goals.byKind('resume').length, 0, 'a disposed agent is never resumed')
@@ -266,6 +267,80 @@ test('a failing goal read is contained and logged', async () => {
   assert.ok(
     harness.warnings.some((warning) => warning.includes('evaluation failed')),
     'the failure is logged',
+  )
+
+  await harness.dispose()
+})
+
+test('waitForJobs: false gates on subagents only', async () => {
+  const harness = await createHarness({ config: { waitForJobs: false } })
+  const agent = harness.agent('agent-1')
+  harness.goal(agent)
+  harness.job(agent)
+
+  await harness.turnStopping(agent)
+  assert.equal(harness.goals.byKind('disarm').length, 0, 'jobs are ignored')
+
+  harness.agent('child-1', { parent: agent.session.id })
+  await harness.turnStopping(agent)
+  assert.equal(harness.goals.byKind('disarm').length, 1, 'subagents still gate')
+
+  await harness.dispose()
+})
+
+test('waitForSubagents: false gates on jobs only', async () => {
+  const harness = await createHarness({ config: { waitForSubagents: false } })
+  const agent = harness.agent('agent-1')
+  harness.goal(agent)
+  harness.agent('child-1', { parent: agent.session.id })
+
+  await harness.turnStopping(agent)
+  assert.equal(harness.goals.byKind('disarm').length, 0, 'subagents are ignored')
+
+  harness.job(agent)
+  await harness.turnStopping(agent)
+  assert.equal(harness.goals.byKind('disarm').length, 1, 'jobs still gate')
+
+  await harness.dispose()
+})
+
+test('an invalid config fails the mount with a clear error', async () => {
+  await assert.rejects(() => createHarness({ config: { maxHoldMs: -1 } }), /maxHoldMs/)
+  await assert.rejects(() => createHarness({ config: { maxHoldMs: 1.5 } }), /maxHoldMs/)
+  await assert.rejects(
+    () => createHarness({ config: { waitForJobs: 'yes' } as unknown as Config }),
+    /waitForJobs/,
+  )
+})
+
+test('the plugin loads without a jobs service and still gates subagents', async () => {
+  const harness = await createHarness({ mountJobs: false })
+  const parent = harness.agent('parent')
+  harness.goal(parent)
+  harness.agent('child-1', { parent: parent.session.id })
+
+  await harness.turnStopping(parent)
+  assert.equal(harness.goals.byKind('disarm').length, 1)
+
+  await harness.dispose()
+})
+
+test('maxHoldMs releases a stuck hold exactly once, with one warning', async () => {
+  const harness = await createHarness({ config: { maxHoldMs: 20 } })
+  const agent = harness.agent('agent-1')
+  harness.goal(agent)
+  harness.job(agent)
+
+  await harness.turnStopping(agent)
+  assert.equal(harness.goals.byKind('disarm').length, 1)
+
+  await new Promise((resolve) => setTimeout(resolve, 60))
+  assert.equal(harness.goals.byKind('resume').length, 1, 'the stuck hold is released')
+  assert.equal(harness.goals.peek(agent)?.activation, 'armed')
+  assert.equal(
+    harness.warnings.filter((warning) => warning.includes('hold expired')).length,
+    1,
+    'exactly one warning per hold',
   )
 
   await harness.dispose()

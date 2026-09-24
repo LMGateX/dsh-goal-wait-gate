@@ -9,7 +9,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { GoalView } from '@deepseek-ai/dsh-goal'
-import type { Config } from './config.ts'
+import type { ResolvedConfig } from './config.ts'
 import { hasLiveJobs, hasLiveSubagents } from './live-work.ts'
 
 /** The exact goal identity this gate disarmed and still owns. */
@@ -21,11 +21,12 @@ interface Hold {
 /** Gate one live agent's goal continuation. */
 export class GoalWaitGate {
   readonly #ctx: Context
-  readonly #config: Config
+  readonly #config: ResolvedConfig
   readonly #holds = new Map<Agent, Hold>()
   readonly #yielded = new Map<Agent, string>()
+  readonly #timers = new Map<Agent, ReturnType<typeof setTimeout>>()
 
-  constructor(ctx: Context, config: Config) {
+  constructor(ctx: Context, config: ResolvedConfig) {
     this.#ctx = ctx
     this.#config = config
   }
@@ -55,6 +56,7 @@ export class GoalWaitGate {
   forget(agent: Agent): void {
     this.#holds.delete(agent)
     this.#yielded.delete(agent)
+    this.#clearExpiry(agent)
   }
 
   /**
@@ -63,6 +65,7 @@ export class GoalWaitGate {
    * never disarmed are untouched. Failures are contained.
    */
   dispose(): void {
+    for (const agent of this.#timers.keys()) this.#clearExpiry(agent)
     for (const [agent, hold] of [...this.#holds]) {
       try {
         const goal = this.#ctx.goals.get(agent)
@@ -81,9 +84,54 @@ export class GoalWaitGate {
 
   /** Whether any configured signal reports live owned work. */
   #hasLiveWork(agent: Agent): boolean {
-    if (this.#config.waitForJobs !== false && hasLiveJobs(this.#ctx, agent)) return true
-    if (this.#config.waitForSubagents !== false && hasLiveSubagents(this.#ctx, agent)) return true
+    if (this.#config.waitForJobs && hasLiveJobs(this.#ctx, agent)) return true
+    if (this.#config.waitForSubagents && hasLiveSubagents(this.#ctx, agent)) return true
     return false
+  }
+
+  /** Arm this hold's escape hatch, when a maximum hold time is configured. */
+  #scheduleExpiry(agent: Agent): void {
+    this.#clearExpiry(agent)
+    const { maxHoldMs } = this.#config
+    if (maxHoldMs <= 0) return
+    const timer = setTimeout(() => {
+      this.#timers.delete(agent)
+      this.#expire(agent, maxHoldMs)
+    }, maxHoldMs)
+    timer.unref()
+    this.#timers.set(agent, timer)
+  }
+
+  /** Cancel the escape hatch for one agent. */
+  #clearExpiry(agent: Agent): void {
+    const timer = this.#timers.get(agent)
+    if (timer === undefined) return
+    clearTimeout(timer)
+    this.#timers.delete(agent)
+  }
+
+  /**
+   * Release one hold that outlived the configured maximum, so a stuck job
+   * cannot freeze the goal forever. Logs once per hold; a later wait gets its
+   * own escape hatch.
+   */
+  #expire(agent: Agent, maxHoldMs: number): void {
+    const hold = this.#holds.get(agent)
+    if (hold === undefined) return
+    try {
+      const goal = this.#ctx.goals.get(agent)
+      if (goal !== undefined && goal.id === hold.goalId && goal.phase === 'active' && goal.activation === 'disarmed') {
+        this.#ctx.goals.resume(agent, { id: goal.id, revision: goal.revision })
+        this.#ctx.logger.warn(
+          `goal-wait-gate: hold expired after ${maxHoldMs}ms for agent "${agent.id}"; releasing continuation`,
+        )
+      }
+    } catch (error) {
+      this.#ctx.logger.warn(
+        `goal-wait-gate: could not release expired hold for agent "${agent.id}": ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+    this.#holds.delete(agent)
   }
 
   /** Disarm an armed goal and remember the exact revision this gate owns. */
@@ -110,6 +158,7 @@ export class GoalWaitGate {
     if (goal === undefined || goal.phase !== 'active' || goal.activation !== 'armed') return
     this.#ctx.goals.disarm(agent)
     this.#holds.set(agent, { goalId: goal.id, revision: goal.revision })
+    this.#scheduleExpiry(agent)
   }
 
   /**
@@ -123,6 +172,7 @@ export class GoalWaitGate {
   #release(agent: Agent, goal: GoalView | undefined): void {
     // The wait is over: the next live-work episode is gated from scratch.
     this.#yielded.delete(agent)
+    this.#clearExpiry(agent)
     const hold = this.#holds.get(agent)
     if (hold === undefined) return
     if (goal === undefined || goal.id !== hold.goalId || goal.phase !== 'active' || goal.activation !== 'disarmed') {

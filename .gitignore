@@ -1,4 +1,5 @@
 node_modules/
 lib/
 .host-compat/
+.patch-check/
 *.tgz

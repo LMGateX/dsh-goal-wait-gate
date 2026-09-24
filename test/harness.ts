@@ -188,26 +188,29 @@ export interface Harness {
   ctx: Context
   agents: FakeAgents
   goals: FakeGoals
-  jobs: FakeJobs
+  jobs: FakeJobs | undefined
   observations: (Activation | undefined)[]
   warnings: string[]
   agent(id: string, options?: { parent?: string; status?: 'idle' | 'running' }): FakeAgent
   goal(agent: FakeAgent, overrides?: Partial<FakeGoal>): FakeGoal
   job(owner: FakeAgent | undefined, overrides?: Partial<FakeJob>): FakeJob
+  settle(job: FakeJob): void
   turnStopping(agent: FakeAgent): Promise<void>
   idle(agent: FakeAgent): void
   unload(): Promise<void>
   dispose(): Promise<void>
 }
 
-export async function createHarness(options: { config?: Config; driver?: boolean } = {}): Promise<Harness> {
+export async function createHarness(
+  options: { config?: Config; driver?: boolean; mountJobs?: boolean } = {},
+): Promise<Harness> {
   const ctx = new Context()
   await ctx.plugin(FakeAgents)
   await ctx.plugin(FakeGoals)
-  await ctx.plugin(FakeJobs)
+  if (options.mountJobs !== false) await ctx.plugin(FakeJobs)
   const agents = ctx.agents as unknown as FakeAgents
   const goals = ctx.goals as unknown as FakeGoals
-  const jobs = ctx.jobs as unknown as FakeJobs
+  const jobs = ctx.jobs as unknown as FakeJobs | undefined
   const observations: (Activation | undefined)[] = []
   const warnings: string[] = []
   const logger = ctx.logger as unknown as { warn: (...args: unknown[]) => void }
@@ -257,6 +260,7 @@ export async function createHarness(options: { config?: Config; driver?: boolean
       return goal
     },
     job(owner, overrides = {}) {
+      if (jobs === undefined) throw new Error('harness: jobs service is not mounted')
       return jobs.add({
         id: `job-${++n}`,
         label: 'background work',
@@ -264,6 +268,9 @@ export async function createHarness(options: { config?: Config; driver?: boolean
         ...(owner === undefined ? {} : { owner: owner.session.id }),
         ...overrides,
       })
+    },
+    settle(job) {
+      jobs?.settle(job.id)
     },
     async turnStopping(agent) {
       agent.status = 'running'

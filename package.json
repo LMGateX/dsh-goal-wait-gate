@@ -23,7 +23,9 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test \"test/**/*.test.ts\"",
     "prepack": "pnpm build",
-    "check:hosts": "node scripts/check-host-compat.mjs"
+    "check:hosts": "node scripts/check-host-compat.mjs",
+    "check:patch": "node scripts/check-profile-patch.mjs",
+    "check": "pnpm typecheck && pnpm test && pnpm check:hosts && pnpm check:patch"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.4",
