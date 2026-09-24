@@ -1,0 +1,41 @@
+{
+  "name": "dsh-goal-wait-gate",
+  "version": "0.1.0",
+  "description": "DSH plugin that withholds automatic goal continuation while the owning agent still has live background work",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    }
+  },
+  "files": [
+    "lib",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "prepack": "pnpm build"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.0.4",
+    "@deepseek-ai/dsh-agent": "0.1.7-alpha.2",
+    "@deepseek-ai/dsh-goal": "0.1.7-alpha.2",
+    "@deepseek-ai/dsh-jobs": "0.1.7-alpha.2"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "~4.0.4",
+    "@deepseek-ai/dsh-agent": "0.1.7-alpha.2",
+    "@deepseek-ai/dsh-goal": "0.1.7-alpha.2",
+    "@deepseek-ai/dsh-jobs": "0.1.7-alpha.2",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}
