@@ -29,7 +29,11 @@ export type { Config } from './config.ts'
  * @param config - gate policy; defaults hold on every available signal.
  */
 export function apply(ctx: Context, config: Config = {}): void {
-  const gate = new GoalWaitGate(ctx, resolveConfig(config))
+  const resolved = resolveConfig(config)
+  const gate = new GoalWaitGate(ctx, resolved)
+  ctx.logger.info(
+    `goal-wait-gate: mounted (waitForJobs=${resolved.waitForJobs}, waitForSubagents=${resolved.waitForSubagents}, maxHoldMs=${resolved.maxHoldMs})`,
+  )
 
   // Primary checkpoint: the turn loop awaits this before the agent turns idle,
   // so the goal is already gated when the official driver's idle check runs.
