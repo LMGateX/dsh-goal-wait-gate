@@ -41,6 +41,15 @@ export function apply(ctx: Context, config: Config = {}): void {
     if (status !== 'idle') return
     gate.evaluate(agent)
   }, { prepend: true })
+
+  // A disposed agent's session may be resumed later as a fresh agent; the old
+  // bookkeeping must not leak into it.
+  ctx.on('agent/disposed', ({ agent }) => {
+    gate.forget(agent)
+  })
+
+  // Unloading the gate restores official behavior: re-arm the goals it holds.
+  ctx.effect(() => () => gate.dispose(), 'goal-wait-gate teardown')
 }
 
 /** Mountable plugin value, also usable from tests and manual compositions. */

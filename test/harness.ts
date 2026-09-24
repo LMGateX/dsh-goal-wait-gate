@@ -64,7 +64,10 @@ export class FakeAgents extends Service {
   }
 
   drop(id: string): void {
+    const agent = this.items.get(id)
+    if (agent === undefined) return
     this.items.delete(id)
+    this.ctx.emit('agent/disposed', { agent: agent as unknown as Agent })
   }
 
   get(id: string): FakeAgent | undefined {
@@ -78,6 +81,7 @@ export class FakeAgents extends Service {
 
 export class FakeGoals extends Service {
   readonly calls: GoalCall[] = []
+  breakReads = false
   private seq = 0
   private readonly bySession = new Map<string, FakeGoal>()
 
@@ -97,6 +101,7 @@ export class FakeGoals extends Service {
   get(agent: FakeAgent): FakeGoal | undefined {
     const goal = this.bySession.get(agent.session.id)
     this.record('get', agent, goal)
+    if (this.breakReads) throw new Error('fake goals: read failed')
     return goal === undefined ? undefined : { ...goal }
   }
 
@@ -115,6 +120,8 @@ export class FakeGoals extends Service {
   resume(agent: FakeAgent, ref: { id: string; revision: number }): FakeGoal {
     const goal = this.bySession.get(agent.session.id)
     this.record('resume', agent, goal, ref)
+    const registry = this.ctx.get('agents') as unknown as FakeAgents | undefined
+    if (registry !== undefined && registry.get(agent.id) !== agent) throw new Error('fake goals: agent is not live')
     if (goal === undefined) throw new Error('fake goals: no current goal to resume')
     if (goal.phase !== 'active' || goal.activation !== 'disarmed') {
       throw new Error(`fake goals: goal is ${goal.phase}/${goal.activation}, not active/disarmed`)
@@ -183,6 +190,7 @@ export interface Harness {
   goals: FakeGoals
   jobs: FakeJobs
   observations: (Activation | undefined)[]
+  warnings: string[]
   agent(id: string, options?: { parent?: string; status?: 'idle' | 'running' }): FakeAgent
   goal(agent: FakeAgent, overrides?: Partial<FakeGoal>): FakeGoal
   job(owner: FakeAgent | undefined, overrides?: Partial<FakeJob>): FakeJob
@@ -201,6 +209,13 @@ export async function createHarness(options: { config?: Config; driver?: boolean
   const goals = ctx.goals as unknown as FakeGoals
   const jobs = ctx.jobs as unknown as FakeJobs
   const observations: (Activation | undefined)[] = []
+  const warnings: string[] = []
+  const logger = ctx.logger as unknown as { warn: (...args: unknown[]) => void }
+  const originalWarn = logger.warn.bind(ctx.logger)
+  logger.warn = (...args: unknown[]) => {
+    warnings.push(args.map((argument) => String(argument)).join(' '))
+    originalWarn(...args)
+  }
 
   if (options.driver !== false) {
     ctx.on('agent/status', ({ agent, status }) => {
@@ -219,6 +234,7 @@ export async function createHarness(options: { config?: Config; driver?: boolean
     goals,
     jobs,
     observations,
+    warnings,
     agent(id, overrides = {}) {
       return agents.add({
         id,

@@ -23,6 +23,7 @@ export class GoalWaitGate {
   readonly #ctx: Context
   readonly #config: Config
   readonly #holds = new Map<Agent, Hold>()
+  readonly #yielded = new Map<Agent, string>()
 
   constructor(ctx: Context, config: Config) {
     this.#ctx = ctx
@@ -50,6 +51,34 @@ export class GoalWaitGate {
     }
   }
 
+  /** Drop all bookkeeping for one agent that is no longer live. */
+  forget(agent: Agent): void {
+    this.#holds.delete(agent)
+    this.#yielded.delete(agent)
+  }
+
+  /**
+   * Unload the gate: re-arm every goal this gate still holds, restoring the
+   * official behavior instead of stranding a disarmed goal. Goals this gate
+   * never disarmed are untouched. Failures are contained.
+   */
+  dispose(): void {
+    for (const [agent, hold] of [...this.#holds]) {
+      try {
+        const goal = this.#ctx.goals.get(agent)
+        if (goal !== undefined && goal.id === hold.goalId && goal.phase === 'active' && goal.activation === 'disarmed') {
+          this.#ctx.goals.resume(agent, { id: goal.id, revision: goal.revision })
+        }
+      } catch (error) {
+        this.#ctx.logger.warn(
+          `goal-wait-gate: could not re-arm agent "${agent.id}" on unload: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+      this.#holds.delete(agent)
+    }
+    this.#yielded.clear()
+  }
+
   /** Whether any configured signal reports live owned work. */
   #hasLiveWork(agent: Agent): boolean {
     if (this.#config.waitForJobs !== false && hasLiveJobs(this.#ctx, agent)) return true
@@ -59,6 +88,25 @@ export class GoalWaitGate {
 
   /** Disarm an armed goal and remember the exact revision this gate owns. */
   #hold(agent: Agent, goal: GoalView | undefined): void {
+    if (this.#yielded.get(agent) !== undefined && this.#yielded.get(agent) !== goal?.id) this.#yielded.delete(agent)
+
+    const hold = this.#holds.get(agent)
+    if (hold !== undefined) {
+      const sameGoal = goal !== undefined && goal.id === hold.goalId && goal.phase === 'active'
+      if (!sameGoal) {
+        // The held goal was replaced, cleared, or left active: the hold is stale.
+        this.#holds.delete(agent)
+        this.#yielded.delete(agent)
+      } else if (goal.activation === 'armed') {
+        // Something else re-armed the goal this gate held. The explicit
+        // action wins: drop the hold and leave this wait ungated.
+        this.#holds.delete(agent)
+        this.#yielded.set(agent, goal.id)
+        return
+      }
+    }
+
+    if (goal !== undefined && this.#yielded.get(agent) === goal.id) return
     if (goal === undefined || goal.phase !== 'active' || goal.activation !== 'armed') return
     this.#ctx.goals.disarm(agent)
     this.#holds.set(agent, { goalId: goal.id, revision: goal.revision })
@@ -73,6 +121,8 @@ export class GoalWaitGate {
    * goal.
    */
   #release(agent: Agent, goal: GoalView | undefined): void {
+    // The wait is over: the next live-work episode is gated from scratch.
+    this.#yielded.delete(agent)
     const hold = this.#holds.get(agent)
     if (hold === undefined) return
     if (goal === undefined || goal.id !== hold.goalId || goal.phase !== 'active' || goal.activation !== 'disarmed') {

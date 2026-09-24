@@ -111,6 +111,166 @@ test('an idle with no preceding turn-stopping still holds', async () => {
   await harness.dispose()
 })
 
+test('a goal the gate did not disarm is never resumed', async () => {
+  const harness = await createHarness()
+  const agent = harness.agent('agent-1')
+  harness.goal(agent, { activation: 'disarmed' })
+
+  await harness.turnStopping(agent)
+  await harness.turnStopping(agent)
+  assert.equal(harness.goals.byKind('resume').length, 0, 'a host disarm stays disarmed')
+
+  await harness.dispose()
+})
+
+test('a human re-arm wins: the gate drops its hold and does not re-disarm during the same wait', async () => {
+  const harness = await createHarness()
+  const agent = harness.agent('agent-1')
+  const goal = harness.goal(agent)
+  harness.job(agent)
+
+  await harness.turnStopping(agent)
+  assert.equal(harness.goals.peek(agent)?.activation, 'disarmed', 'gated while the job runs')
+
+  // The user explicitly resumes while the background job is still running.
+  const resumed = harness.goals.resume(agent, { id: goal.id, revision: goal.revision })
+  assert.equal(resumed.activation, 'armed')
+
+  await harness.turnStopping(agent)
+  assert.equal(harness.goals.peek(agent)?.activation, 'armed', 'the explicit re-arm is not fought')
+  assert.equal(harness.goals.byKind('disarm').length, 1, 'no second disarm during the same wait')
+
+  // A later episode, after the work is gone, gates normally again.
+  harness.jobs.settle('job-1')
+  await harness.turnStopping(agent)
+  harness.job(agent)
+  await harness.turnStopping(agent)
+  assert.equal(harness.goals.byKind('disarm').length, 2, 'a new wait is gated again')
+
+  await harness.dispose()
+})
+
+test('a goal paused while held is dropped and never resumed', async () => {
+  const harness = await createHarness()
+  const agent = harness.agent('agent-1')
+  const goal = harness.goal(agent)
+  const job = harness.job(agent)
+
+  await harness.turnStopping(agent)
+  assert.equal(harness.goals.byKind('disarm').length, 1)
+
+  harness.goals.pause(agent, { id: goal.id, revision: goal.revision })
+  harness.jobs.settle(job.id)
+  await harness.turnStopping(agent)
+  assert.equal(harness.goals.byKind('resume').length, 0, 'a paused goal is not resumed')
+
+  await harness.dispose()
+})
+
+test('an edit while held still releases with the current revision', async () => {
+  const harness = await createHarness()
+  const agent = harness.agent('agent-1')
+  const goal = harness.goal(agent)
+  const job = harness.job(agent)
+  await harness.turnStopping(agent)
+
+  // An official edit commits a new revision and keeps the gate's disarm.
+  const editedRevision = goal.revision + 1
+  const live = harness.goals.peek(agent)
+  assert.ok(live !== undefined)
+  live.revision = editedRevision
+  live.objective = 'edited objective'
+  harness.jobs.settle(job.id)
+
+  await harness.turnStopping(agent)
+  const resumes = harness.goals.byKind('resume')
+  assert.equal(resumes.length, 1)
+  assert.equal(resumes[0]?.revision, editedRevision, 'released against the current revision')
+  assert.equal(harness.goals.peek(agent)?.activation, 'armed')
+
+  await harness.dispose()
+})
+
+test('a replaced goal drops the stale hold and gates the new goal', async () => {
+  const harness = await createHarness()
+  const agent = harness.agent('agent-1')
+  harness.goal(agent)
+  harness.job(agent)
+  await harness.turnStopping(agent)
+  assert.equal(harness.goals.byKind('disarm').length, 1)
+
+  harness.goals.set(agent.session.id, {
+    id: 'goal-2',
+    revision: 1,
+    objective: 'a new objective',
+    phase: 'active',
+    activation: 'armed',
+    roundsStarted: 0,
+    maxGoalRounds: 256,
+  })
+  await harness.turnStopping(agent)
+  const disarms = harness.goals.byKind('disarm')
+  assert.equal(disarms.length, 2, 'the new armed goal is gated')
+  assert.equal(disarms[1]?.goalId, 'goal-2')
+
+  await harness.dispose()
+})
+
+test('unloading the plugin re-arms only the goals it gated', async () => {
+  const harness = await createHarness()
+  const gated = harness.agent('gated')
+  const untouched = harness.agent('untouched')
+  harness.goal(gated)
+  harness.job(gated)
+  harness.goal(untouched, { activation: 'disarmed' })
+  harness.job(untouched)
+
+  await harness.turnStopping(gated)
+  await harness.turnStopping(untouched)
+  assert.equal(harness.goals.byKind('disarm').length, 1, 'only the armed goal is gated')
+
+  await harness.unload()
+  const resumes = harness.goals.byKind('resume')
+  assert.deepEqual(resumes.map((call) => call.agentId), ['gated'], 'only the gate\'s own hold is re-armed')
+  assert.equal(harness.goals.peek(gated)?.activation, 'armed')
+  assert.equal(harness.goals.peek(untouched)?.activation, 'disarmed')
+
+  await harness.dispose()
+})
+
+test('an agent disposed while held is forgotten before unload', async () => {
+  const harness = await createHarness()
+  const agent = harness.agent('agent-1')
+  harness.goal(agent)
+  const job = harness.job(agent)
+  await harness.turnStopping(agent)
+  assert.equal(harness.goals.byKind('disarm').length, 1)
+
+  harness.jobs.settle(job.id)
+  harness.agents.drop('agent-1')
+  await harness.unload()
+  assert.equal(harness.goals.byKind('resume').length, 0, 'a disposed agent is never resumed')
+
+  await harness.dispose()
+})
+
+test('a failing goal read is contained and logged', async () => {
+  const harness = await createHarness()
+  const agent = harness.agent('agent-1')
+  harness.goal(agent)
+  harness.job(agent)
+  harness.goals.breakReads = true
+
+  await harness.turnStopping(agent)
+  assert.equal(harness.goals.byKind('disarm').length, 0, 'no mutation when the read fails')
+  assert.ok(
+    harness.warnings.some((warning) => warning.includes('evaluation failed')),
+    'the failure is logged',
+  )
+
+  await harness.dispose()
+})
+
 test('the plugin mounts and unloads on a live context', async () => {
   const harness = await createHarness()
   await harness.unload()
