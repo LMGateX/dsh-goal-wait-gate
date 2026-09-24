@@ -16,7 +16,7 @@
  * Usage: node scripts/check-host-compat.mjs [version ...]
  */
 import { execFileSync } from 'node:child_process'
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -61,7 +61,14 @@ for (const host of HOSTS) {
   }
   writeFileSync(join(hostDirectory, 'package.json'), JSON.stringify(manifest, null, 2) + '\n')
   console.log('host ' + host + ': installing that host\'s packages into the isolated copy')
-  run('pnpm', ['install', '--ignore-scripts', '--prefer-offline', '--reporter=silent'], hostDirectory)
+  // --ignore-workspace keeps the copy its own pnpm project: without it pnpm
+  // finds the repo's pnpm-workspace.yaml above the copy and installs nothing,
+  // which silently falls back to the repo's own types.
+  run('pnpm', ['install', '--ignore-workspace', '--ignore-scripts', '--prefer-offline', '--reporter=silent'], hostDirectory)
+  if (!existsSync(join(hostDirectory, 'node_modules'))) {
+    failures.push('host ' + host + ': pnpm installed nothing into the isolated copy')
+    continue
+  }
 
   cpSync(join(ROOT, 'src'), join(hostDirectory, 'src'), { recursive: true })
   cpSync(join(ROOT, 'test'), join(hostDirectory, 'test'), { recursive: true })
