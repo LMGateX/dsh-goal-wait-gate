@@ -191,8 +191,10 @@ export interface Harness {
   jobs: FakeJobs | undefined
   observations: (Activation | undefined)[]
   warnings: string[]
+  infos: string[]
   agent(id: string, options?: { parent?: string; status?: 'idle' | 'running' }): FakeAgent
   goal(agent: FakeAgent, overrides?: Partial<FakeGoal>): FakeGoal
+  createGoal(agent: FakeAgent, overrides?: Partial<FakeGoal>): FakeGoal
   job(owner: FakeAgent | undefined, overrides?: Partial<FakeJob>): FakeJob
   settle(job: FakeJob): void
   turnStopping(agent: FakeAgent): Promise<void>
@@ -213,11 +215,32 @@ export async function createHarness(
   const jobs = ctx.jobs as unknown as FakeJobs | undefined
   const observations: (Activation | undefined)[] = []
   const warnings: string[] = []
-  const logger = ctx.logger as unknown as { warn: (...args: unknown[]) => void }
+  const infos: string[] = []
+  const logger = ctx.logger as unknown as { warn: (...args: unknown[]) => void; info: (...args: unknown[]) => void }
   const originalWarn = logger.warn.bind(ctx.logger)
+  const originalInfo = logger.info.bind(ctx.logger)
   logger.warn = (...args: unknown[]) => {
     warnings.push(args.map((argument) => String(argument)).join(' '))
     originalWarn(...args)
+  }
+  logger.info = (...args: unknown[]) => {
+    infos.push(args.map((argument) => String(argument)).join(' '))
+    originalInfo(...args)
+  }
+
+  const makeGoal = (agent: FakeAgent, overrides: Partial<FakeGoal> = {}): FakeGoal => {
+    const goal: FakeGoal = {
+      id: 'goal-1',
+      revision: 1,
+      objective: 'ship the thing',
+      phase: 'active',
+      activation: 'armed',
+      roundsStarted: 0,
+      maxGoalRounds: 256,
+      ...overrides,
+    }
+    goals.set(agent.session.id, goal)
+    return goal
   }
 
   if (options.driver !== false) {
@@ -238,6 +261,7 @@ export async function createHarness(
     jobs,
     observations,
     warnings,
+    infos,
     agent(id, overrides = {}) {
       return agents.add({
         id,
@@ -246,17 +270,14 @@ export async function createHarness(
       })
     },
     goal(agent, overrides = {}) {
-      const goal: FakeGoal = {
-        id: 'goal-1',
-        revision: 1,
-        objective: 'ship the thing',
-        phase: 'active',
-        activation: 'armed',
-        roundsStarted: 0,
-        maxGoalRounds: 256,
-        ...overrides,
-      }
-      goals.set(agent.session.id, goal)
+      return makeGoal(agent, overrides)
+    },
+    createGoal(agent, overrides = {}) {
+      const goal = makeGoal(agent, overrides)
+      ctx.emit('goal/changed', {
+        agent: agent as unknown as Agent,
+        change: { operation: 'create', ref: { id: goal.id, revision: goal.revision } } as unknown as GoalChanged,
+      })
       return goal
     },
     job(owner, overrides = {}) {

@@ -30,21 +30,6 @@ const CORDIS_VERSION = '4.0.4'
 const WORK = join(ROOT, '.host-compat')
 const TSC = join(ROOT, 'node_modules', '.bin', 'tsc')
 
-const COMPILER_OPTIONS = {
-  target: 'ES2023',
-  lib: ['ES2023'],
-  module: 'NodeNext',
-  moduleResolution: 'NodeNext',
-  types: ['node'],
-  strict: true,
-  noUncheckedIndexedAccess: true,
-  noImplicitOverride: true,
-  verbatimModuleSyntax: true,
-  allowImportingTsExtensions: true,
-  skipLibCheck: true,
-  noEmit: true,
-}
-
 const run = (command, args, cwd) => {
   process.stdout.write('  $ ' + command + ' ' + args.join(' ') + '\n')
   try {
@@ -80,10 +65,13 @@ for (const host of HOSTS) {
 
   cpSync(join(ROOT, 'src'), join(hostDirectory, 'src'), { recursive: true })
   cpSync(join(ROOT, 'test'), join(hostDirectory, 'test'), { recursive: true })
+  // Standalone project over the copy: it extends the repo's compiler options
+  // (no duplicated flags) but includes only the copied sources, so module
+  // resolution can never walk up into the repo's own node_modules.
   const tsconfigPath = join(hostDirectory, 'tsconfig.json')
   writeFileSync(
     tsconfigPath,
-    JSON.stringify({ compilerOptions: COMPILER_OPTIONS, include: ['src/**/*.ts', 'test/**/*.ts'] }, null, 2) + '\n',
+    JSON.stringify({ extends: '../../tsconfig.json', include: ['src/**/*.ts', 'test/**/*.ts'] }, null, 2) + '\n',
   )
 
   // Prove the copy can only reach its own node_modules before trusting the typecheck.

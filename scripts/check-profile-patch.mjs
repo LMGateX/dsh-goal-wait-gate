@@ -12,7 +12,7 @@
  * No running server is contacted and no live session state is touched.
  */
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -28,7 +28,7 @@ const PATCH = join(WORK, 'goal-wait-gate.patch.yml')
 const DUMP = join(WORK, 'dump.yml')
 
 /** The exact insert the README tells users to add to their profile patch layer. */
-export const PATCH_BODY = [
+const PATCH_BODY = [
   '- insert:',
   '    - id: goal-wait-gate',
   "      name: 'dsh-goal-wait-gate'",
@@ -47,13 +47,23 @@ if (!existsSync(REAL_PROFILE)) {
 rmSync(WORK, { recursive: true, force: true })
 mkdirSync(ISOLATED_PROFILE, { recursive: true })
 
-// Copy the small profile files; symlink the dependency tree (read-only use).
-const LINK_ONLY = new Set(['node_modules'])
+// Copy the small profile files and symlink only the dependency tree, which is
+// read but never written. Other directories (package-manager state such as
+// .plugin-manager) are skipped entirely: the isolated home is built from
+// copies, so no live profile file can be reached for writing.
 for (const entry of readdirSync(REAL_PROFILE, { withFileTypes: true })) {
   const source = join(REAL_PROFILE, entry.name)
   const target = join(ISOLATED_PROFILE, entry.name)
-  if (LINK_ONLY.has(entry.name) || entry.isDirectory()) symlinkSync(source, target)
-  else copyFileSync(source, target)
+  if (entry.name === 'node_modules') symlinkSync(source, target)
+  else if (!entry.isDirectory()) copyFileSync(source, target)
+}
+
+// The patch applied here is the patch the README documents; a drift between
+// them fails the check instead of silently verifying different YAML.
+const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
+if (!readme.includes(PATCH_BODY)) {
+  console.error('FAIL README.md no longer documents the exact patch this check applies')
+  process.exit(1)
 }
 
 writeFileSync(PATCH, PATCH_BODY)

@@ -15,6 +15,14 @@ import type {} from '@deepseek-ai/dsh-jobs'
  * session record must not hold continuation. Only sessions whose header names
  * a parent and carries the subagent origin are descendants; a fork shares the
  * lineage field without that origin and is an independent conversation.
+ *
+ * Every registered descendant counts, including one between turns. The
+ * official archive-admission walk traverses the same lineage but collects only
+ * `status === "running"` children, because a session may be archived once its
+ * idle children are cancelled. For this gate the unit is the live activation
+ * epoch, not the child's current turn: a resident child has not settled, so
+ * its settlement notice has not reached the parent, and releasing early would
+ * let the official driver inject a round before that notice is consumed.
  */
 export function hasLiveSubagents(ctx: Context, agent: Agent): boolean {
   const childrenByParent = new Map<string, Agent[]>()

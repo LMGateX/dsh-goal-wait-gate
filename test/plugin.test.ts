@@ -68,9 +68,12 @@ test('live subagent descendants hold continuation, and gone children release it'
   const parent = harness.agent('parent')
   harness.goal(parent)
 
-  harness.agent('child-1', { parent: parent.session.id })
+  // A resident child between turns is still an active activation epoch: it has
+  // not settled, so its settlement notice has not reached the parent yet.
+  const child = harness.agent('child-1', { parent: parent.session.id, status: 'idle' })
   await harness.turnStopping(parent)
-  assert.equal(harness.goals.byKind('disarm').length, 1, 'a live child holds continuation')
+  assert.equal(harness.goals.byKind('disarm').length, 1, 'a resident child holds continuation even while idle')
+  assert.equal(child.status, 'idle')
 
   harness.agent('grandchild-1', { parent: 'session-child-1' })
   await harness.turnStopping(parent)
@@ -342,6 +345,37 @@ test('maxHoldMs releases a stuck hold exactly once, with one warning', async () 
     1,
     'exactly one warning per hold',
   )
+
+  await harness.dispose()
+})
+
+test('a goal created while the agent is already idle is gated before the driver can inject', async () => {
+  const harness = await createHarness()
+  const agent = harness.agent('agent-1')
+  harness.job(agent)
+
+  harness.createGoal(agent)
+
+  assert.equal(harness.goals.byKind('disarm').length, 1, 'creation is evaluated immediately')
+  assert.equal(harness.goals.peek(agent)?.activation, 'disarmed', 'the new goal never gets an empty round')
+
+  await harness.dispose()
+})
+
+test('every hold and release is logged with the goal identity and reason', async () => {
+  const harness = await createHarness()
+  const agent = harness.agent('agent-1')
+  harness.goal(agent)
+  const job = harness.job(agent)
+
+  await harness.turnStopping(agent)
+  harness.settle(job)
+  await harness.turnStopping(agent)
+
+  const held = harness.infos.filter((line) => line.includes('held') && line.includes('goal-1'))
+  const released = harness.infos.filter((line) => line.includes('released') && line.includes('goal-1'))
+  assert.equal(held.length, 1, 'one hold line')
+  assert.equal(released.length, 1, 'one release line')
 
   await harness.dispose()
 })

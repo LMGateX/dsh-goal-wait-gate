@@ -26,6 +26,7 @@ Policy boundaries:
 - The durable goal phase is never touched. The gate never calls `pause`; only the process-local activation toggles.
 - Goals the gate did not disarm are never resumed. A session-resume, fork, or driver-failure disarm stays disarmed, as the official design requires.
 - An explicit human re-arm wins for the rest of that wait: the gate drops its hold and does not fight it. The next wait is gated again.
+- A `goal/changed` event (creation, edit, host resume) is evaluated before the official driver's own drive request, so a goal created while work is already pending cannot start an empty round.
 - Unloading the plugin re-arms the goals it still holds, so removing the gate restores official behavior instead of stranding a disarmed goal.
 - Failures are contained and logged; a failing read never mutates a goal.
 
@@ -68,7 +69,7 @@ Then add this to the profile's patch layer, `$DSH_HOME/profiles/web/cordis.patch
 |---|---|---|
 | `waitForJobs` | `true` | Hold continuation while the session owns running/stopping jobs. |
 | `waitForSubagents` | `true` | Hold continuation while the session owns live subagent descendants. |
-| `maxHoldMs` | `0` | `0` holds indefinitely. A positive value releases a hold that outlives it and logs one warning per hold — a throttle for stuck background work, not a silent stop. |
+| `maxHoldMs` | `0` | `0` holds indefinitely. A positive value releases a hold that outlives it, logs one warning per hold, and leaves the rest of that wait ungated (the release is not undone by the gate's own goal-change evaluation) — an escape hatch for stuck background work, not a silent stop. |
 
 Invalid configuration fails at load with an error naming the field.
 

@@ -43,6 +43,13 @@ export function apply(ctx: Context, config: Config = {}): void {
     gate.evaluate(agent)
   }, { prepend: true })
 
+  // A goal created, edited, or resumed while live work is already pending must
+  // not start an empty round: the official driver turns `goal/changed` into a
+  // drive request, so this listener runs before its own.
+  ctx.on('goal/changed', ({ agent }) => {
+    gate.evaluate(agent)
+  }, { prepend: true })
+
   // A disposed agent's session may be resumed later as a fresh agent; the old
   // bookkeeping must not leak into it.
   ctx.on('agent/disposed', ({ agent }) => {
