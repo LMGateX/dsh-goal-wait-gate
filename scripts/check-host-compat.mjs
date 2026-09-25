@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url'
 import semver from 'semver'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const DEFAULT_HOSTS = ['0.1.7-alpha.2', '0.1.7-rc.1']
+const DEFAULT_HOSTS = ['0.1.7-alpha.2', '0.1.7-rc.1', '0.1.7-rc.2']
 const HOSTS = process.argv.slice(2).length > 0 ? process.argv.slice(2) : DEFAULT_HOSTS
 const DSH_PACKAGES = ['@deepseek-ai/dsh-agent', '@deepseek-ai/dsh-goal', '@deepseek-ai/dsh-jobs']
 const CORDIS_VERSION = '4.0.4'

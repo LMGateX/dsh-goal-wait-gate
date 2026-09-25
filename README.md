@@ -32,7 +32,7 @@ Policy boundaries:
 
 ## Requirements
 
-- DSH `0.1.7-alpha.2` or `0.1.7-rc.1` (declared peer range `>=0.1.7-alpha.2 <0.1.8`; the same-tuple prerelease comparator is what lets `rc.1` satisfy it).
+- DSH `0.1.7-alpha.2`, `0.1.7-rc.1`, or `0.1.7-rc.2` (declared peer range `>=0.1.7-alpha.2 <0.1.8`; the same-tuple prerelease comparator is what lets the `rc` prereleases satisfy it).
 - Node >= 22.
 - Services: `agents` and `goals` are required; `jobs` is optional (without it, only subagent work gates).
 
