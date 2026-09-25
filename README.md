@@ -27,6 +27,8 @@ Policy boundaries:
 - Goals the gate did not disarm are never resumed. A session-resume, fork, or driver-failure disarm stays disarmed, as the official design requires.
 - An explicit human re-arm wins for the rest of that wait: the gate drops its hold and does not fight it. The next wait is gated again.
 - A `goal/changed` event (creation, edit, host resume) is evaluated before the official driver's own drive request, so a goal created while work is already pending cannot start an empty round.
+- A goal that is no longer `active` is never disarmed and never re-armed. Completion, pausing, blocking, clearing, and replacement all disarm by themselves, and the driver only drives `active` + `armed` goals, so a finished goal produces no further rounds and this gate does not resurrect it.
+- Nothing survives a host restart by design, and nothing needs to: continuation authority is process-local, so a restored goal reads `disarmed` until an explicit start. Every start (create, `/goal resume`, the goal tool, the GUI) commits and emits `goal/changed`, which this gate evaluates `prepend`ed, before the official driver's own drive request.
 - Unloading the plugin re-arms the goals it still holds, so removing the gate restores official behavior instead of stranding a disarmed goal.
 - Failures are contained and logged; a failing read never mutates a goal.
 

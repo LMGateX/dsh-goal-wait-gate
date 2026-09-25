@@ -380,6 +380,55 @@ test('every hold and release is logged with the goal identity and reason', async
   await harness.dispose()
 })
 
+test('a completed goal is never gated and never re-armed, even with live work', async () => {
+  const harness = await createHarness()
+  const agent = harness.agent('agent-1')
+  harness.goal(agent, { phase: 'complete', activation: 'disarmed' })
+  harness.job(agent)
+
+  await harness.turnStopping(agent)
+  assert.equal(harness.goals.byKind('disarm').length, 0, 'a finished goal is not held')
+  assert.equal(harness.goals.byKind('resume').length, 0, 'a finished goal is not re-armed')
+
+  await harness.dispose()
+})
+
+test('a goal completed while held is dropped and left disarmed', async () => {
+  const harness = await createHarness()
+  const agent = harness.agent('agent-1')
+  const goal = harness.goal(agent)
+  const job = harness.job(agent)
+
+  await harness.turnStopping(agent)
+  assert.equal(harness.goals.byKind('disarm').length, 1, 'held while the job runs')
+
+  harness.goals.complete(agent, { id: goal.id, revision: goal.revision })
+  assert.equal(harness.goals.peek(agent)?.phase, 'complete')
+  assert.equal(harness.goals.peek(agent)?.activation, 'disarmed', 'completion disarms by itself')
+
+  harness.settle(job)
+  await harness.turnStopping(agent)
+  assert.equal(harness.goals.byKind('resume').length, 0, 'a completed goal is never re-armed')
+
+  await harness.dispose()
+})
+
+test('a goal started after a restart is gated before the driver can inject', async () => {
+  // A fresh process: no holds survive, and a restored active goal reads disarmed
+  // until the user starts it again.
+  const harness = await createHarness()
+  const agent = harness.agent('agent-1')
+  const goal = harness.goal(agent, { activation: 'disarmed' })
+  harness.job(agent)
+
+  harness.goals.resume(agent, { id: goal.id, revision: goal.revision })
+
+  assert.equal(harness.goals.byKind('disarm').length, 1, 'the restarted goal is gated like any other arming')
+  assert.equal(harness.goals.peek(agent)?.activation, 'disarmed')
+
+  await harness.dispose()
+})
+
 test('the plugin mounts and unloads on a live context', async () => {
   const harness = await createHarness()
   await harness.unload()

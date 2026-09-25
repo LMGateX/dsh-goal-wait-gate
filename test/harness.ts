@@ -44,7 +44,7 @@ export interface FakeJob {
 }
 
 export interface GoalCall {
-  kind: 'get' | 'disarm' | 'resume' | 'pause'
+  kind: 'get' | 'disarm' | 'resume' | 'pause' | 'complete'
   agentId: string
   goalId?: string
   revision?: number
@@ -142,6 +142,21 @@ export class FakeGoals extends Service {
     if (goal === undefined) throw new Error('fake goals: no current goal to pause')
     goal.phase = 'paused'
     goal.activation = 'disarmed'
+    return { ...goal }
+  }
+
+  complete(agent: FakeAgent, ref: { id: string; revision: number }): FakeGoal {
+    const goal = this.bySession.get(agent.session.id)
+    this.record('complete', agent, goal, ref)
+    if (goal === undefined) throw new Error('fake goals: no current goal to complete')
+    if (goal.id !== ref.id || goal.revision !== ref.revision) throw new Error('fake goals: stale ref')
+    goal.phase = 'complete'
+    goal.activation = 'disarmed'
+    goal.revision += 1
+    this.ctx.emit('goal/changed', {
+      agent: agent as unknown as Agent,
+      change: { operation: 'complete', ref: { id: goal.id, revision: goal.revision } } as unknown as GoalChanged,
+    })
     return { ...goal }
   }
 
