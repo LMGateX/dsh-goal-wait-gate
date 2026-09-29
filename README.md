@@ -34,7 +34,7 @@ Policy boundaries:
 
 ## Requirements
 
-- DSH `0.1.7-alpha.2`, `0.1.7-rc.1`, or `0.1.7-rc.2` (declared peer range `>=0.1.7-alpha.2 <0.1.8`; the same-tuple prerelease comparator is what lets the `rc` prereleases satisfy it).
+- DSH `0.1.7-alpha.2` through `0.2.0-rc.2` (declared peer range `>=0.1.7-alpha.2 <0.3`). DSH 0.2 enforces these peers **at load time with prereleases included**: a range that does not accept the running version makes the loader refuse the plugin (the explicit override is `dsh plugin allow-version`). `pnpm check:hosts` verifies the range against every host in the matrix.
 - Node >= 22.
 - Services: `agents` and `goals` are required; `jobs` is optional (without it, only subagent work gates).
 
@@ -80,10 +80,12 @@ Invalid configuration fails at load with an error naming the field.
 ```bash
 pnpm typecheck     # TypeScript, no emit
 pnpm test          # boundary tests (real cordis context, fake DSH services)
-pnpm check:hosts   # typecheck against 0.1.7-alpha.2 and 0.1.7-rc.1 in isolated copies
+pnpm check:hosts   # typecheck every supported host in isolated copies (default: 0.1.7-alpha.2, 0.1.7-rc.2, 0.2.0-rc.2)
 pnpm check:patch   # isolated dry run of the patch above against the local profile composition
 pnpm check         # all of the above
 ```
+
+When DSH bumps its minor version, widen the `@deepseek-ai/dsh*` peer ranges in `package.json` and rerun `pnpm check:hosts <new-version>`. DSH 0.2 and later refuse a plugin whose peers do not accept the running version — the boot log reads `disabling profile plugin goal-wait-gate: Plugin dsh-goal-wait-gate@<version> is incompatible with dsh <version>` — and `dsh plugin allow-version` is the explicit per-plugin override.
 
 **Isolation.** Every check stays inside this repository. `check:hosts` installs each host's packages into its own `.host-compat/` copy; `check:patch` builds a `.patch-check/` DSH home that symlinks the profile's `node_modules` but copies its small config files, then runs `dsh --dump-config`. No live profile, session store, or running server is written to or contacted.
 

@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url'
 import semver from 'semver'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const DEFAULT_HOSTS = ['0.1.7-alpha.2', '0.1.7-rc.1', '0.1.7-rc.2']
+const DEFAULT_HOSTS = ['0.1.7-alpha.2', '0.1.7-rc.2', '0.2.0-rc.2']
 const HOSTS = process.argv.slice(2).length > 0 ? process.argv.slice(2) : DEFAULT_HOSTS
 const DSH_PACKAGES = ['@deepseek-ai/dsh-agent', '@deepseek-ai/dsh-goal', '@deepseek-ai/dsh-jobs']
 const CORDIS_VERSION = '4.0.4'
@@ -95,7 +95,12 @@ for (const host of HOSTS) {
 
   for (const [name, range] of Object.entries(pkg.peerDependencies)) {
     const version = name === '@deepseek-ai/cordis' ? CORDIS_VERSION : host
-    if (!semver.satisfies(version, range)) failures.push(name + ': peer range "' + range + '" rejects ' + version)
+    // Mirror dsh-app-boot's evaluatePluginCompatibility: the loader refuses a
+    // plugin unless every @deepseek-ai/dsh* peer accepts the runtime version,
+    // and it compares with prereleases included.
+    if (!semver.satisfies(version, range, { includePrerelease: true })) {
+      failures.push(name + ': peer range "' + range + '" rejects ' + version)
+    }
   }
 }
 
