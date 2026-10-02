@@ -19,18 +19,28 @@ This is a known, still-unfixed upstream behavior through DSH `0.1.7-rc.1` (discu
 
 **Checkpoints.** The gate evaluates at `agent/turn-stopping` (the turn loop awaits it, so the decision lands before the agent turns idle) and at `agent/status` with status `idle` (registered with `prepend` as a safety net for turn shapes that end without `turn-stopping`).
 
-**Hold and release.** While live work exists and the goal is `active` + `armed`, the gate calls `ctx.goals.disarm` and remembers the exact `{goalId, revision}` it owns. When no live work remains — the work settled *and* its completion-notice turn has ended — the gate calls `ctx.goals.resume` on its own hold. The official driver then performs its normal next round.
+**Hold and release.** While live work exists and the goal is `active` + `armed`, the gate calls `ctx.goals.disarm` and remembers the goal id it holds for the exact live agent; release reads the current revision. When no live work remains — the work settled *and* its completion-notice turn has ended — the gate calls `ctx.goals.resume` on its own hold. The official driver then performs its normal next round.
 
 Policy boundaries:
 
 - The durable goal phase is never touched. The gate never calls `pause`; only the process-local activation toggles.
-- Goals the gate did not disarm are never resumed. A session-resume, fork, or driver-failure disarm stays disarmed, as the official design requires.
+- Goals the gate did not disarm are never resumed. A session-resume, fork, or driver-failure disarm with no existing gate-owned hold stays disarmed. A later external disarm overlapping an owned hold cannot be distinguished by activation alone; see the [ownership limitation](<docs/adr/0001-retain-activation-gate.md>) and upgrade scenarios.
 - An explicit human re-arm wins for the rest of that wait: the gate drops its hold and does not fight it. The next wait is gated again.
 - A `goal/changed` event (creation, edit, host resume) is evaluated before the official driver's own drive request, so a goal created while work is already pending cannot start an empty round.
 - A goal that is no longer `active` is never disarmed and never re-armed. Completion, pausing, blocking, clearing, and replacement all disarm by themselves, and the driver only drives `active` + `armed` goals, so a finished goal produces no further rounds and this gate does not resurrect it.
 - Nothing survives a host restart by design, and nothing needs to: continuation authority is process-local, so a restored goal reads `disarmed` until an explicit start. Every start (create, `/goal resume`, the goal tool, the GUI) commits and emits `goal/changed`, which this gate evaluates `prepend`ed, before the official driver's own drive request.
 - Unloading the plugin re-arms the goals it still holds, so removing the gate restores official behavior instead of stranding a disarmed goal.
 - Failures are contained and logged; a failing read never mutates a goal.
+
+## Design decision and upstream watch
+
+We deliberately retain the activation-based bridge for now; no runtime policy changes accompany this decision. Disarming does not pause, hide, or make a goal uneditable. In the checked DSH `0.2.0-rc.2` baseline, model edits require direct human input in the current top-level turn regardless of activation, and goal mutations do not automatically refresh model-visible context.
+
+- [Decision and trade-offs (中文)](<docs/adr/0001-retain-activation-gate.md>): why we keep `disarm/resume` rather than reject or indefinitely await an already queued goal prompt.
+- [DSH upgrade watch checklist (中文)](<docs/upstream-goal-watch.md>): scheduling seams, edit authority, goal visibility, lifecycle changes, isolated acceptance scenarios, and a version-review template.
+- [Domain glossary](<CONTEXT.md>): goal phase, continuation activation, scheduling gate, owned hold, and goal visibility are distinct concepts.
+
+A clean future migration requires a public scheduling defer **and re-evaluation** contract, or native upstream background-work awareness. Generic interception hooks exist today, but they are not by themselves that contract. Revisit this decision on DSH upgrades rather than treating the current implementation as proof that every interaction is covered.
 
 ## Requirements
 
@@ -85,14 +95,16 @@ pnpm check:patch   # isolated dry run of the patch above against the local profi
 pnpm check         # all of the above
 ```
 
-When DSH bumps its minor version, widen the `@deepseek-ai/dsh*` peer ranges in `package.json` and rerun `pnpm check:hosts <new-version>`. DSH 0.2 and later refuse a plugin whose peers do not accept the running version — the boot log reads `disabling profile plugin goal-wait-gate: Plugin dsh-goal-wait-gate@<version> is incompatible with dsh <version>` — and `dsh plugin allow-version` is the explicit per-plugin override.
+On every DSH upgrade, follow the [upstream watch checklist](<docs/upstream-goal-watch.md>) and rerun `pnpm check:hosts <new-version>`. Widen the `@deepseek-ai/dsh*` peer ranges in `package.json` only if needed and after checking the new version’s behavior; matching types and peers alone do not prove runtime compatibility. DSH 0.2 and later refuse a plugin whose peers do not accept the running version — the boot log reads `disabling profile plugin goal-wait-gate: Plugin dsh-goal-wait-gate@<version> is incompatible with dsh <version>` — and `dsh plugin allow-version` is the explicit per-plugin override.
 
 **Isolation.** Every check stays inside this repository. `check:hosts` installs each host's packages into its own `.host-compat/` copy; `check:patch` builds a `.patch-check/` DSH home that symlinks the profile's `node_modules` but copies its small config files, then runs `dsh --dump-config`. No live profile, session store, or running server is written to or contacted.
 
 ### Live acceptance (manual)
 
-1. Build, mount, and patch as above; reload the profile.
-2. In a session: create a goal, start a long background job (`run_in_background: true`), and end the turn asking the agent to wait for the completion notice.
+Use a dedicated disposable DSH home/profile and a test session. Do not reload a shared profile, restart a working GUI, or reuse other users’ running sessions for acceptance experiments. Adapt the install and patch examples to that isolated profile.
+
+1. Build, mount, and patch as above in the isolated environment; reload only that test profile.
+2. In its test session: create a goal, start a long background job (`run_in_background: true`), and end the turn asking the agent to wait for the completion notice.
 3. **Pass**: no `<goal_round>` appears while the job runs; `get_goal` shows `active` + `disarmed` and the round count unchanged; exactly one continuation round follows the completion notice.
 4. **Control**: with the plugin unmounted, the same sequence produces a `<goal_round>` within seconds.
 
