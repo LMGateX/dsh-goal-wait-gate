@@ -40,6 +40,7 @@ We deliberately retain the activation-based bridge for now; no runtime policy ch
 - [DSH upgrade watch checklist (中文)](<docs/upstream-goal-watch.md>): scheduling seams, edit authority, goal visibility, lifecycle changes, isolated acceptance scenarios, and a version-review template.
 - [Domain glossary](<CONTEXT.md>): goal phase, continuation activation, scheduling gate, owned hold, and goal visibility are distinct concepts.
 - [Turn-stopping wait feasibility research (中文)](<docs/research/turn-stopping-wait-gate.md>): 30 isolated native-module scenarios, a conditional running-wait design, and remaining migration risks. The prototype stays on a separate research branch; the installed gate is unchanged.
+- [Driver replacement and selectable-strategy research (中文)](<docs/research/goal-driver-replacement.md>): 32 separate native-module scenarios, measured native-derived scheduler deltas, notice/admission race limits, and the custom configuration-page/exclusive-owner contract. No new mode or hot switching is implemented.
 
 A clean future migration requires a public scheduling defer **and re-evaluation** contract, or native upstream background-work awareness. Generic interception hooks exist today, but they are not by themselves that contract. Revisit this decision on DSH upgrades rather than treating the current implementation as proof that every interaction is covered.
 

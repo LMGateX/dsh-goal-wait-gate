@@ -13,9 +13,11 @@
 - Goal mutation 自身不注入模型上下文；get_goal 和续轮提示暴露目标信息。
 - 原设计讨论基线的自动化覆盖主要是 real Cordis + fake DSH 模块的插件测试、隔离 host 类型/peer 检查及 profile patch 组合检查。后续收尾等待研究另做了真实原生 goal 工具权限实验（见下文），但仍未验证真实模型的目标感知。
 
-## 已完成的另一条研究路线
+## 已完成的两条研究路线
 
 [收尾等待闸门研究](<research/turn-stopping-wait-gate.md>)在 DSH `0.2.0-rc.2` 的真实原生模块上执行了 30 个隔离场景：通过可取消的 `agent/turn-stopping` 等待，可以保持正常等待期间的 activation，并让原生 driver 继续管理后续轮次。不过父 agent 会保持 running/open turn，存在 Stop listener 延后、权限持续时间和 hook 绕过路径等语义取舍；它不满足下文“独立 idle 调度 seam”的全部条件，也尚未替换当前实现。升级时应同时复核该报告的边界，不能把它误读为“已有独立调度接口”。
+
+[Driver 替换与多策略配置研究](<research/goal-driver-replacement.md>)另执行了 32 个隔离原生场景：版本锁定的 native-derived scheduler 可以不占住父 turn 而正常保留 armed；但静态 descendant 检查不足以证明通知已送达，pending-notice 原型仍缺 announcement/epoch/scope 和失败策略，最后 pre-step 到 request/admission 也有实测窗口。升级时还须复核 native prompt invariant、Settings/custom Plugins page、Loader teardown 是否 awaited、driver 所有权/重启/人工授权；enum 和文件锁本身不是安全切换合同。现行默认及已安装运行时没有变化。
 
 ## 每次升级重点看哪里
 
