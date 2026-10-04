@@ -11,7 +11,11 @@
 - `disarm` 不修改 durable phase/revision；`resume` 是 goal mutation，会更新 revision、重新 armed 并发出 goal change。
 - Goal edit 保留 activation；模型工具 edit 要求当前顶层轮次存在直接人类输入，而不是要求 goal armed。
 - Goal mutation 自身不注入模型上下文；get_goal 和续轮提示暴露目标信息。
-- 现有自动化覆盖主要是 real Cordis + fake DSH 模块的插件测试、隔离 host 类型/peer 检查及 profile patch 组合检查。此次讨论未做真实模型可见性或官方工具权限的端到端验证。
+- 原设计讨论基线的自动化覆盖主要是 real Cordis + fake DSH 模块的插件测试、隔离 host 类型/peer 检查及 profile patch 组合检查。后续收尾等待研究另做了真实原生 goal 工具权限实验（见下文），但仍未验证真实模型的目标感知。
+
+## 已完成的另一条研究路线
+
+[收尾等待闸门研究](<research/turn-stopping-wait-gate.md>)在 DSH `0.2.0-rc.2` 的真实原生模块上执行了 30 个隔离场景：通过可取消的 `agent/turn-stopping` 等待，可以保持正常等待期间的 activation，并让原生 driver 继续管理后续轮次。不过父 agent 会保持 running/open turn，存在 Stop listener 延后、权限持续时间和 hook 绕过路径等语义取舍；它不满足下文“独立 idle 调度 seam”的全部条件，也尚未替换当前实现。升级时应同时复核该报告的边界，不能把它误读为“已有独立调度接口”。
 
 ## 每次升级重点看哪里
 

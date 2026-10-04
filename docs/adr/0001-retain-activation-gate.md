@@ -45,3 +45,5 @@ status: accepted
 优先观察上游是否增加**调度前暂缓 + 条件变化后重新评估**的公开 seam，或让官方 driver 原生识别待返回的后台工作。只有确认不会修改目标授权、占住父 agent、消耗 round、阻挡人类输入或后台回报，并通过隔离集成验证后，才考虑迁移或停用当前闸门。
 
 目标可见性、编辑权限和 lifecycle 改动也应触发复核，但单独放开 edit 并不能解决频繁续轮；单独增加 reject 或回调也不足以证明有安全的延期协议。
+
+后续[收尾等待研究](<../research/turn-stopping-wait-gate.md>)已验证另一条有条件可行的路线：保持父 running/open turn 来延后 idle，而不改变正常等待期间的 activation。它有意占住父执行流程，不满足本 ADR 对独立调度 seam 的条件；若选择该取舍，需另立决策。当前保留 activation 闸门的决定未变。
