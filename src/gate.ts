@@ -21,6 +21,7 @@ export class GoalWaitGate {
   /** Goal ids this gate conceded to an explicit human re-arm, per exact live agent. */
   readonly #yieldedGoals = new Map<Agent, string>()
   readonly #expiryTimers = new Map<Agent, ReturnType<typeof setTimeout>>()
+  #stopping = false
 
   constructor(ctx: Context, config: ResolvedConfig) {
     this.#ctx = ctx
@@ -34,6 +35,7 @@ export class GoalWaitGate {
    * @param agent - the live agent whose goal should be evaluated.
    */
   evaluate(agent: Agent): void {
+    if (this.#stopping) return
     try {
       const goal = this.#ctx.goals.get(agent)
       if (this.#hasLiveWork(agent)) this.#hold(agent, goal)
@@ -52,12 +54,20 @@ export class GoalWaitGate {
     this.#clearExpiry(agent)
   }
 
+  /** Managed ownership closes without restoring automatic continuation. */
+  closeWithoutRearm(): void {
+    this.#stopping = true
+    for (const agent of [...this.#expiryTimers.keys()]) this.#clearExpiry(agent)
+    this.#heldGoals.clear()
+    this.#yieldedGoals.clear()
+  }
+
   /**
-   * Unload the gate: re-arm every goal this gate still holds, restoring the
-   * official behavior instead of stranding a disarmed goal. Goals this gate
-   * never disarmed are untouched. Failures are contained.
+   * Legacy unload re-arms owned holds, restoring official continuation.
+   * Managed startup uses closeWithoutRearm instead. Failures are contained.
    */
   dispose(): void {
+    this.#stopping = true
     for (const agent of [...this.#expiryTimers.keys()]) this.#clearExpiry(agent)
     for (const [agent, heldGoal] of [...this.#heldGoals]) {
       try {
@@ -193,6 +203,7 @@ export class GoalWaitGate {
    * hold.
    */
   #expire(agent: Agent): void {
+    if (this.#stopping) return
     const heldGoal = this.#heldGoals.get(agent)
     if (heldGoal === undefined) return
     this.#heldGoals.delete(agent)

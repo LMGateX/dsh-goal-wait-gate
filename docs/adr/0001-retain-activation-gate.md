@@ -49,3 +49,5 @@ status: accepted
 后续[收尾等待研究](<../research/turn-stopping-wait-gate.md>)已验证另一条有条件可行的路线：保持父 running/open turn 来延后 idle，而不改变正常等待期间的 activation。它有意占住父执行流程，不满足本 ADR 对独立调度 seam 的条件；若选择该取舍，需另立决策。当前保留 activation 闸门的决定未变。
 
 后续[Driver 替换与多策略配置研究](<../research/goal-driver-replacement.md>)另有 32 个隔离原生场景，支持 version-pinned native adaptation 在 idle/armed 语义上的 locality；但接管了 scheduler 的兼容/通知/所有权责任，pending-notice 与最终 admission 仍有边界。它是需要新决策的替代路线，不把本 ADR 的轻量桥接默认悄悄改成 forked driver，也尚未发布模式选择或热切换功能。
+
+[ADR 0002](<0002-opt-in-pinned-driver.md>) 接受独立、版本固定、显式 opt-in 的启动 owner；不 supersede 本记录的 legacy root/default 决定。模式选择仅用于直接 root bootstrap，未部署、未提供页面或热切换。

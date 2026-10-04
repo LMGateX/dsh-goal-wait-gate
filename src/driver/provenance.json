@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "upstream": {
+    "package": "@deepseek-ai/dsh-goal-round-driver",
+    "version": "0.2.0-rc.2",
+    "license": "MIT",
+    "copyright": "Copyright (c) 2026 DeepSeek",
+    "repository": "https://github.com/deepseek-ai/deepseek-harness",
+    "repositoryDirectory": "packages/goal/goal-round-driver",
+    "artifact": "lib/index.js",
+    "sha256": "3bca01a2e87de1683fa8b55ad54688eefc4e366c971c20e9afd654db3b5ab450",
+    "sourceBasis": "Exact published package bundle; no upstream revision inferred from master."
+  },
+  "derivedFiles": [
+    "native-driver.ts",
+    "prompt.ts"
+  ],
+  "adaptations": [
+    "Strict TypeScript annotations and exported installNativeDriver lifecycle handle.",
+    "Optional synchronous policy after native housekeeping and round cap, and in both pre-step reservation fences.",
+    "Policy subscription inside composite effect after native listeners and mount disarm.",
+    "Global stop latch, synchronous all-state revocation and cancellation, policy unsubscription before drain, shared idempotent stop promise, and final composite-effect cleanup."
+  ],
+  "preserved": [
+    "Published rc.2 queued/claimed retirement and cancellation behavior; no master behavior imported.",
+    "Native prompt bytes, source identities, authority, durable round counter ownership, checkpoints, error classifications, and message restoration."
+  ],
+  "guaranteeBoundary": "Policy is checked before reservation and at both pre-step fences only; it is not an atomic admission or request-commit gate."
+}

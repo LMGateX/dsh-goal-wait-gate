@@ -24,3 +24,18 @@ _Avoid_: User pause
 
 **Goal visibility**: The current goal information actually available in model input or obtained through a read. A stored goal and a model-visible goal snapshot are not the same thing.
 _Avoid_: Goal activation
+
+**Residency epoch**: One continuous period in which a delegated agent is resident. Resuming the same durable conversation starts a new epoch.
+_Avoid_: Child conversation identity
+
+**Settlement handoff**: The interval between work finishing and the owner’s normal completion input being offered. Finishing a result, releasing ownership, and delivering or consuming that input are distinct events.
+_Avoid_: Result settled means fully disposed
+
+**Runtime ownership**: The current live parent–child relationship, distinct from a conversation’s durable ancestry.
+_Avoid_: Parent history
+
+**Startup ownership**: Exclusive responsibility for automatic continuation during one root lifetime; selecting a strategy is distinct from switching a live scheduler.
+_Avoid_: Hot handoff
+
+**Cleanup integrity**: What the lifecycle owner can establish about shutdown, distinct from a disposal call merely returning.
+_Avoid_: Verified clean shutdown

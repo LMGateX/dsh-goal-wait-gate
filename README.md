@@ -2,7 +2,13 @@
 
 A DeepSeek Harness (DSH) plugin that **withholds automatic goal continuation while the owning agent still has live background work**.
 
-It is a bridge, not a fork: the official goal packages stay exactly as they are. The plugin reads public services and toggles only the goal's process-local continuation activation, which is the input the official `dsh-goal-round-driver` reads at every idle.
+**The legacy root entry** is a bridge, not a fork: the official goal packages stay exactly as they are. The plugin reads public services and toggles only the goal's process-local continuation activation, which is the input the official `dsh-goal-round-driver` reads at every idle.
+
+## Opt-in startup implementation (development branch)
+
+A separate TypeScript `dsh-goal-wait-gate/startup` export implements mutually exclusive activation (default), replacement, native and off startup strategies. It does **not** change the root export/default or deploy anything. [Support contract and delivery status](<docs/startup-driver.md>) and [opt-in decision](<docs/adr/0002-opt-in-pinned-driver.md>) describe the exact rc.2 baseline, direct-root-only bootstrap, work/cleanup limits and explicit late-admission counterexample. It is **not an ordinary profile/Loader row or GUI integration**, and no hot switching is supported.
+
+The new development dependency lock graph was generated, but clean frozen-lock installation and native dependency-build policy still need independent verification. Treat this branch as unreleased; do not infer package reproducibility from the linked-dependency local test/build results. The installation/configuration sections below refer **only to the legacy bridge**.
 
 ## The problem
 
@@ -40,7 +46,7 @@ We deliberately retain the activation-based bridge for now; no runtime policy ch
 - [DSH upgrade watch checklist (中文)](<docs/upstream-goal-watch.md>): scheduling seams, edit authority, goal visibility, lifecycle changes, isolated acceptance scenarios, and a version-review template.
 - [Domain glossary](<CONTEXT.md>): goal phase, continuation activation, scheduling gate, owned hold, and goal visibility are distinct concepts.
 - [Turn-stopping wait feasibility research (中文)](<docs/research/turn-stopping-wait-gate.md>): 30 isolated native-module scenarios, a conditional running-wait design, and remaining migration risks. The prototype stays on a separate research branch; the installed gate is unchanged.
-- [Driver replacement and selectable-strategy research (中文)](<docs/research/goal-driver-replacement.md>): 32 separate native-module scenarios, measured native-derived scheduler deltas, notice/admission race limits, and the custom configuration-page/exclusive-owner contract. No new mode or hot switching is implemented.
+- [Driver replacement and selectable-strategy research (中文)](<docs/research/goal-driver-replacement.md>): 32 separate native-module scenarios, measured native-derived scheduler deltas, notice/admission race limits, and the custom configuration-page/exclusive-owner contract. The separate opt-in startup implementation now follows this research; it is not deployed and does not add hot switching.
 
 A clean future migration requires a public scheduling defer **and re-evaluation** contract, or native upstream background-work awareness. Generic interception hooks exist today, but they are not by themselves that contract. Revisit this decision on DSH upgrades rather than treating the current implementation as proof that every interaction is covered.
 
@@ -90,9 +96,9 @@ Invalid configuration fails at load with an error naming the field.
 ## Verification
 
 ```bash
-pnpm typecheck     # TypeScript, no emit
-pnpm test          # boundary tests (real cordis context, fake DSH services)
-pnpm check:hosts   # typecheck every supported host in isolated copies (default: 0.1.7-alpha.2, 0.1.7-rc.2, 0.2.0-rc.2)
+pnpm typecheck     # TypeScript, no emit (development tests/build require Node 24+)
+pnpm test          # native startup/ownership assertions plus separate legacy fake-service tests
+pnpm check:hosts   # legacy entry/tests ONLY; typecheck supported hosts in isolated copies (default: 0.1.7-alpha.2, 0.1.7-rc.2, 0.2.0-rc.2)
 pnpm check:patch   # isolated dry run of the patch above against the local profile composition
 pnpm check         # all of the above
 ```

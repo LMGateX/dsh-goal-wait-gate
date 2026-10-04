@@ -8,38 +8,92 @@
     ".": {
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
+    },
+    "./startup": {
+      "types": "./lib/types/startup.d.ts",
+      "default": "./lib/startup.js"
     }
   },
   "files": [
     "lib",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "docs/startup-driver.md"
   ],
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-driver-assets.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test \"test/**/*.test.ts\"",
     "prepack": "pnpm build",
     "check:hosts": "node scripts/check-host-compat.mjs",
     "check:patch": "node scripts/check-profile-patch.mjs",
-    "check": "pnpm typecheck && pnpm test && pnpm check:hosts && pnpm check:patch"
+    "check": "pnpm typecheck && pnpm test && pnpm check:hosts && pnpm check:patch",
+    "test:legacy": "node --test test/plugin.test.ts",
+    "test:native": "node --test test/startup.test.ts test/ownership.test.ts"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.4",
     "@deepseek-ai/dsh-agent": ">=0.1.7-alpha.2 <0.3",
     "@deepseek-ai/dsh-goal": ">=0.1.7-alpha.2 <0.3",
-    "@deepseek-ai/dsh-jobs": ">=0.1.7-alpha.2 <0.3"
+    "@deepseek-ai/dsh-jobs": ">=0.1.7-alpha.2 <0.3",
+    "@deepseek-ai/dsh-goal-round-driver": ">=0.1.7-alpha.2 <0.3",
+    "@deepseek-ai/dsh-session": ">=0.1.7-alpha.2 <0.3",
+    "@deepseek-ai/dsh-llm": ">=0.1.7-alpha.2 <0.3",
+    "@deepseek-ai/dsh-system-prompt": ">=0.1.7-alpha.2 <0.3",
+    "@deepseek-ai/dsh-scope": ">=0.1.7-alpha.2 <0.3",
+    "@deepseek-ai/dsh-subagent": ">=0.1.7-alpha.2 <0.3"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "~4.0.4",
-    "@deepseek-ai/dsh-agent": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-goal": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-jobs": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-agent": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-goal": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-jobs": "0.2.0-rc.2",
     "@types/node": "^24.0.0",
     "semver": "^7.8.5",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "@deepseek-ai/dsh-agent-loop": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-goal-round-driver": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-jobs-local": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-tool-jobs": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-tool-goal": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-session": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-session-projection": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-system-prompt": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-invariants": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-scope": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-subagent": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-subagent-in-process-driver": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-subagent-spawn-in-process": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-subagent-fork-in-process": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-tool-subagent": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-session-persistence": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-session-persistence-jsonl": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-session-query": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-session-query-sqlite": "0.2.0-rc.2"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-goal-round-driver": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-system-prompt": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-scope": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-subagent": {
+      "optional": true
+    }
   }
 }
