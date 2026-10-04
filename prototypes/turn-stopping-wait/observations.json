@@ -1,0 +1,1158 @@
+{
+  "summary": {
+    "scenarioCount": 30,
+    "nativeVersion": "0.2.0-rc.2",
+    "allScenariosFinished": true,
+    "liveProfilesLoaded": false,
+    "networkModelCalls": false
+  },
+  "results": [
+    {
+      "scenario": "native-baseline-background-does-not-keep-running",
+      "observations": {
+        "state": {
+          "status": "idle",
+          "calls": 2,
+          "holds": 0,
+          "goal": {
+            "phase": "blocked",
+            "activation": "disarmed",
+            "revision": 2,
+            "roundsStarted": 1,
+            "objective": "Prototype objective"
+          },
+          "turnEnds": 2,
+          "admitted": [
+            {
+              "turn": 1,
+              "kind": "user"
+            },
+            {
+              "turn": 2,
+              "kind": "goal",
+              "round": 1,
+              "revision": 1
+            }
+          ],
+          "releases": [],
+          "toolResults": []
+        },
+        "jobStillRunning": true
+      }
+    },
+    {
+      "scenario": "hold-and-native-job-notice-release",
+      "observations": {
+        "waiting": {
+          "status": "running",
+          "calls": 1,
+          "holds": 1,
+          "goal": {
+            "phase": "active",
+            "activation": "armed",
+            "revision": 1,
+            "roundsStarted": 0,
+            "objective": "Prototype objective"
+          },
+          "turnEnds": 0,
+          "admitted": [
+            {
+              "turn": 1,
+              "kind": "user"
+            }
+          ],
+          "releases": [],
+          "toolResults": []
+        },
+        "after": {
+          "status": "idle",
+          "calls": 3,
+          "holds": 0,
+          "goal": {
+            "phase": "blocked",
+            "activation": "disarmed",
+            "revision": 2,
+            "roundsStarted": 1,
+            "objective": "Prototype objective"
+          },
+          "turnEnds": 2,
+          "admitted": [
+            {
+              "turn": 1,
+              "kind": "user"
+            },
+            {
+              "turn": 1,
+              "kind": "tool-jobs"
+            },
+            {
+              "turn": 2,
+              "kind": "goal",
+              "round": 1,
+              "revision": 1
+            }
+          ],
+          "releases": [
+            "inbox"
+          ],
+          "toolResults": []
+        },
+        "noGateGoalMutations": [
+          "create",
+          "block"
+        ]
+      }
+    },
+    {
+      "scenario": "native-round-completes-after-job-inject",
+      "observations": {
+        "before": {
+          "status": "running",
+          "calls": 1,
+          "holds": 1,
+          "goal": {
+            "phase": "active",
+            "activation": "armed",
+            "revision": 1,
+            "roundsStarted": 1,
+            "objective": "Prototype objective"
+          },
+          "turnEnds": 0,
+          "admitted": [
+            {
+              "turn": 1,
+              "kind": "goal",
+              "round": 1,
+              "revision": 1
+            }
+          ],
+          "releases": [],
+          "toolResults": []
+        },
+        "after": {
+          "status": "idle",
+          "calls": 4,
+          "holds": 0,
+          "goal": {
+            "phase": "complete",
+            "activation": "disarmed",
+            "revision": 2,
+            "roundsStarted": 1,
+            "objective": "Prototype objective"
+          },
+          "turnEnds": 1,
+          "admitted": [
+            {
+              "turn": 1,
+              "kind": "goal",
+              "round": 1,
+              "revision": 1
+            },
+            {
+              "turn": 1,
+              "kind": "tool-jobs"
+            },
+            {
+              "turn": 1,
+              "kind": "tool-goal"
+            }
+          ],
+          "releases": [
+            "inbox"
+          ],
+          "toolResults": [
+            {
+              "name": "get_goal",
+              "isError": false
+            },
+            {
+              "name": "update_goal",
+              "isError": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "scenario": "human-followup-releases-and-reholds",
+      "observations": {
+        "status": "running",
+        "calls": 2,
+        "holds": 1,
+        "goal": {
+          "phase": "active",
+          "activation": "armed",
+          "revision": 1,
+          "roundsStarted": 0,
+          "objective": "Prototype objective"
+        },
+        "turnEnds": 1,
+        "admitted": [
+          {
+            "turn": 1,
+            "kind": "user"
+          },
+          {
+            "turn": 2,
+            "kind": "user"
+          }
+        ],
+        "releases": [
+          "inbox"
+        ],
+        "toolResults": []
+      }
+    },
+    {
+      "scenario": "human-steer-releases-and-reholds",
+      "observations": {
+        "status": "running",
+        "calls": 2,
+        "holds": 1,
+        "goal": {
+          "phase": "active",
+          "activation": "armed",
+          "revision": 1,
+          "roundsStarted": 0,
+          "objective": "Prototype objective"
+        },
+        "turnEnds": 0,
+        "admitted": [
+          {
+            "turn": 1,
+            "kind": "user"
+          },
+          {
+            "turn": 1,
+            "kind": "user"
+          }
+        ],
+        "releases": [
+          "inbox"
+        ],
+        "toolResults": []
+      }
+    },
+    {
+      "scenario": "prequeued-followup-is-not-stranded",
+      "observations": {
+        "status": "running",
+        "calls": 2,
+        "holds": 1,
+        "goal": {
+          "phase": "active",
+          "activation": "armed",
+          "revision": 1,
+          "roundsStarted": 0,
+          "objective": "Prototype objective"
+        },
+        "turnEnds": 1,
+        "admitted": [
+          {
+            "turn": 1,
+            "kind": "user"
+          },
+          {
+            "turn": 2,
+            "kind": "user"
+          }
+        ],
+        "releases": [],
+        "toolResults": []
+      }
+    },
+    {
+      "scenario": "cancel-observes-abort-and-unwinds",
+      "observations": {
+        "status": "idle",
+        "calls": 1,
+        "holds": 0,
+        "goal": {
+          "phase": "active",
+          "activation": "disarmed",
+          "revision": 1,
+          "roundsStarted": 0,
+          "objective": "Prototype objective"
+        },
+        "turnEnds": 1,
+        "admitted": [
+          {
+            "turn": 1,
+            "kind": "user"
+          }
+        ],
+        "releases": [
+          "abort"
+        ],
+        "toolResults": []
+      }
+    },
+    {
+      "scenario": "negative-cancel-without-abort-listener",
+      "observations": {
+        "stuck": {
+          "status": "running",
+          "calls": 1,
+          "holds": 1,
+          "goal": {
+            "phase": "active",
+            "activation": "armed",
+            "revision": 1,
+            "roundsStarted": 0,
+            "objective": "Prototype objective"
+          },
+          "turnEnds": 0,
+          "admitted": [
+            {
+              "turn": 1,
+              "kind": "user"
+            }
+          ],
+          "releases": [],
+          "toolResults": []
+        },
+        "afterRescue": {
+          "status": "idle",
+          "calls": 1,
+          "holds": 0,
+          "goal": {
+            "phase": "active",
+            "activation": "disarmed",
+            "revision": 1,
+            "roundsStarted": 0,
+            "objective": "Prototype objective"
+          },
+          "turnEnds": 1,
+          "admitted": [
+            {
+              "turn": 1,
+              "kind": "user"
+            }
+          ],
+          "releases": [
+            "manual-rescue"
+          ],
+          "toolResults": []
+        }
+      }
+    },
+    {
+      "scenario": "agent-disposal-unwinds-before-job-owner-cleanup",
+      "observations": {
+        "agentDetached": true,
+        "held": 0,
+        "producerCancels": 1,
+        "releases": [
+          "abort"
+        ]
+      }
+    },
+    {
+      "scenario": "gate-unload-preserves-native-driver",
+      "observations": {
+        "status": "idle",
+        "calls": 2,
+        "holds": 0,
+        "goal": {
+          "phase": "blocked",
+          "activation": "disarmed",
+          "revision": 2,
+          "roundsStarted": 1,
+          "objective": "Prototype objective"
+        },
+        "turnEnds": 2,
+        "admitted": [
+          {
+            "turn": 1,
+            "kind": "user"
+          },
+          {
+            "turn": 2,
+            "kind": "goal",
+            "round": 1,
+            "revision": 1
+          }
+        ],
+        "releases": [
+          "unload"
+        ],
+        "toolResults": []
+      }
+    },
+    {
+      "scenario": "host-complete-while-held",
+      "observations": {
+        "status": "idle",
+        "calls": 1,
+        "holds": 0,
+        "goal": {
+          "phase": "complete",
+          "activation": "disarmed",
+          "revision": 2,
+          "roundsStarted": 0,
+          "objective": "Prototype objective"
+        },
+        "turnEnds": 1,
+        "admitted": [
+          {
+            "turn": 1,
+            "kind": "user"
+          }
+        ],
+        "releases": [
+          "activation-change"
+        ],
+        "toolResults": []
+      }
+    },
+    {
+      "scenario": "host-pause-while-held",
+      "observations": {
+        "status": "idle",
+        "calls": 1,
+        "holds": 0,
+        "goal": {
+          "phase": "paused",
+          "activation": "disarmed",
+          "revision": 2,
+          "roundsStarted": 0,
+          "objective": "Prototype objective"
+        },
+        "turnEnds": 1,
+        "admitted": [
+          {
+            "turn": 1,
+            "kind": "user"
+          }
+        ],
+        "releases": [
+          "activation-change"
+        ],
+        "toolResults": []
+      }
+    },
+    {
+      "scenario": "negative-max-tokens-unfiltered-hold",
+      "observations": {
+        "delayed": {
+          "status": "running",
+          "calls": 1,
+          "holds": 1,
+          "goal": {
+            "phase": "active",
+            "activation": "armed",
+            "revision": 1,
+            "roundsStarted": 0,
+            "objective": "Prototype objective"
+          },
+          "turnEnds": 0,
+          "admitted": [
+            {
+              "turn": 1,
+              "kind": "user"
+            }
+          ],
+          "releases": [],
+          "toolResults": []
+        },
+        "after": {
+          "status": "idle",
+          "calls": 1,
+          "holds": 0,
+          "goal": {
+            "phase": "active",
+            "activation": "disarmed",
+            "revision": 1,
+            "roundsStarted": 0,
+            "objective": "Prototype objective"
+          },
+          "turnEnds": 1,
+          "admitted": [
+            {
+              "turn": 1,
+              "kind": "user"
+            }
+          ],
+          "releases": [
+            "manual-rescue"
+          ],
+          "toolResults": []
+        }
+      }
+    },
+    {
+      "scenario": "max-tokens-finish-guard-preserves-native-disarm",
+      "observations": {
+        "status": "idle",
+        "calls": 1,
+        "holds": 0,
+        "goal": {
+          "phase": "active",
+          "activation": "disarmed",
+          "revision": 1,
+          "roundsStarted": 0,
+          "objective": "Prototype objective"
+        },
+        "turnEnds": 1,
+        "admitted": [
+          {
+            "turn": 1,
+            "kind": "user"
+          }
+        ],
+        "releases": [],
+        "toolResults": []
+      }
+    },
+    {
+      "scenario": "provider-error-bypasses-stopping-hook",
+      "observations": {
+        "state": {
+          "status": "idle",
+          "calls": 1,
+          "holds": 0,
+          "goal": {
+            "phase": "active",
+            "activation": "disarmed",
+            "revision": 1,
+            "roundsStarted": 0,
+            "objective": "Prototype objective"
+          },
+          "turnEnds": 1,
+          "admitted": [
+            {
+              "turn": 1,
+              "kind": "user"
+            }
+          ],
+          "releases": [],
+          "toolResults": []
+        },
+        "hookEntries": 0,
+        "errorObserved": true
+      }
+    },
+    {
+      "scenario": "negative-autonomous-edit-keeps-stale-round-authority",
+      "observations": {
+        "status": "running",
+        "calls": 3,
+        "holds": 0,
+        "goal": {
+          "phase": "active",
+          "activation": "armed",
+          "revision": 2,
+          "roundsStarted": 1,
+          "objective": "Changed objective"
+        },
+        "turnEnds": 0,
+        "admitted": [
+          {
+            "turn": 1,
+            "kind": "goal",
+            "round": 1,
+            "revision": 1
+          },
+          {
+            "turn": 1,
+            "kind": "tool-jobs"
+          }
+        ],
+        "releases": [
+          "inbox"
+        ],
+        "toolResults": [
+          {
+            "name": "get_goal",
+            "isError": false
+          },
+          {
+            "name": "update_goal",
+            "isError": true,
+            "code": "GOAL_TOOL_AUTHORITY_REQUIRED"
+          }
+        ]
+      }
+    },
+    {
+      "scenario": "goal-edit-releases-for-native-fresh-revision",
+      "observations": {
+        "status": "running",
+        "calls": 2,
+        "holds": 1,
+        "goal": {
+          "phase": "active",
+          "activation": "armed",
+          "revision": 2,
+          "roundsStarted": 1,
+          "objective": "Changed objective"
+        },
+        "turnEnds": 1,
+        "admitted": [
+          {
+            "turn": 1,
+            "kind": "user"
+          },
+          {
+            "turn": 2,
+            "kind": "goal",
+            "round": 1,
+            "revision": 2
+          }
+        ],
+        "releases": [
+          "goal-change"
+        ],
+        "toolResults": []
+      }
+    },
+    {
+      "scenario": "held-human-turn-retains-native-edit-authority",
+      "observations": {
+        "status": "running",
+        "calls": 3,
+        "holds": 0,
+        "goal": {
+          "phase": "active",
+          "activation": "armed",
+          "revision": 2,
+          "roundsStarted": 0,
+          "objective": "Edited after notice"
+        },
+        "turnEnds": 0,
+        "admitted": [
+          {
+            "turn": 1,
+            "kind": "user"
+          },
+          {
+            "turn": 1,
+            "kind": "tool-jobs"
+          }
+        ],
+        "releases": [
+          "inbox"
+        ],
+        "toolResults": [
+          {
+            "name": "get_goal",
+            "isError": false
+          },
+          {
+            "name": "update_goal",
+            "isError": false
+          }
+        ]
+      }
+    },
+    {
+      "scenario": "idle-goal-start-with-live-job-admits-one-round",
+      "observations": {
+        "status": "running",
+        "calls": 2,
+        "holds": 1,
+        "goal": {
+          "phase": "active",
+          "activation": "armed",
+          "revision": 1,
+          "roundsStarted": 1,
+          "objective": "Prototype objective"
+        },
+        "turnEnds": 1,
+        "admitted": [
+          {
+            "turn": 1,
+            "kind": "user"
+          },
+          {
+            "turn": 2,
+            "kind": "goal",
+            "round": 1,
+            "revision": 1
+          }
+        ],
+        "releases": [],
+        "toolResults": []
+      }
+    },
+    {
+      "scenario": "serial-later-stopping-listener-is-delayed",
+      "observations": {
+        "waiting": {
+          "state": {
+            "status": "running",
+            "calls": 1,
+            "holds": 1,
+            "goal": {
+              "phase": "active",
+              "activation": "armed",
+              "revision": 1,
+              "roundsStarted": 0,
+              "objective": "Prototype objective"
+            },
+            "turnEnds": 0,
+            "admitted": [
+              {
+                "turn": 1,
+                "kind": "user"
+              }
+            ],
+            "releases": [],
+            "toolResults": []
+          },
+          "laterListenerCalls": 0
+        },
+        "laterListenerCalls": 1
+      }
+    },
+    {
+      "scenario": "native-continuable-child-notice-releases-parent",
+      "observations": {
+        "waiting": {
+          "status": "running",
+          "calls": 1,
+          "holds": 1,
+          "goal": {
+            "phase": "active",
+            "activation": "armed",
+            "revision": 1,
+            "roundsStarted": 0,
+            "objective": "Prototype objective"
+          },
+          "turnEnds": 0,
+          "admitted": [
+            {
+              "turn": 1,
+              "kind": "user"
+            }
+          ],
+          "releases": [],
+          "toolResults": []
+        },
+        "after": {
+          "status": "idle",
+          "calls": 3,
+          "holds": 0,
+          "goal": {
+            "phase": "blocked",
+            "activation": "disarmed",
+            "revision": 2,
+            "roundsStarted": 1,
+            "objective": "Prototype objective"
+          },
+          "turnEnds": 2,
+          "admitted": [
+            {
+              "turn": 1,
+              "kind": "user"
+            },
+            {
+              "turn": 1,
+              "kind": "subagent-settled"
+            },
+            {
+              "turn": 2,
+              "kind": "goal",
+              "round": 1,
+              "revision": 1
+            }
+          ],
+          "releases": [
+            "inbox"
+          ],
+          "toolResults": []
+        },
+        "childDetached": true
+      }
+    },
+    {
+      "scenario": "disarm-only-releases-without-rearming",
+      "observations": {
+        "status": "idle",
+        "calls": 1,
+        "holds": 0,
+        "goal": {
+          "phase": "active",
+          "activation": "disarmed",
+          "revision": 1,
+          "roundsStarted": 0,
+          "objective": "Prototype objective"
+        },
+        "turnEnds": 1,
+        "admitted": [
+          {
+            "turn": 1,
+            "kind": "user"
+          }
+        ],
+        "releases": [
+          "activation-change"
+        ],
+        "toolResults": []
+      }
+    },
+    {
+      "scenario": "host-clear-releases-while-work-remains",
+      "observations": {
+        "status": "idle",
+        "calls": 1,
+        "holds": 0,
+        "turnEnds": 1,
+        "admitted": [
+          {
+            "turn": 1,
+            "kind": "user"
+          }
+        ],
+        "releases": [
+          "activation-change"
+        ],
+        "toolResults": []
+      }
+    },
+    {
+      "scenario": "native-driver-unload-does-not-hang-held-round",
+      "observations": {
+        "status": "idle",
+        "calls": 1,
+        "holds": 0,
+        "goal": {
+          "phase": "active",
+          "activation": "disarmed",
+          "revision": 1,
+          "roundsStarted": 1,
+          "objective": "Prototype objective"
+        },
+        "turnEnds": 1,
+        "admitted": [
+          {
+            "turn": 1,
+            "kind": "goal",
+            "round": 1,
+            "revision": 1
+          }
+        ],
+        "releases": [
+          "activation-change"
+        ],
+        "toolResults": []
+      }
+    },
+    {
+      "scenario": "pre-step-rejection-bypasses-wait-and-admits-native-round",
+      "observations": {
+        "status": "running",
+        "calls": 1,
+        "holds": 1,
+        "goal": {
+          "phase": "active",
+          "activation": "armed",
+          "revision": 1,
+          "roundsStarted": 1,
+          "objective": "Prototype objective"
+        },
+        "turnEnds": 1,
+        "admitted": [
+          {
+            "turn": 2,
+            "kind": "goal",
+            "round": 1,
+            "revision": 1
+          }
+        ],
+        "releases": [],
+        "toolResults": []
+      }
+    },
+    {
+      "scenario": "earlier-serial-bail-can-skip-wait-gate",
+      "observations": {
+        "status": "running",
+        "calls": 2,
+        "holds": 1,
+        "goal": {
+          "phase": "active",
+          "activation": "armed",
+          "revision": 1,
+          "roundsStarted": 1,
+          "objective": "Prototype objective"
+        },
+        "turnEnds": 1,
+        "admitted": [
+          {
+            "turn": 1,
+            "kind": "user"
+          },
+          {
+            "turn": 2,
+            "kind": "goal",
+            "round": 1,
+            "revision": 1
+          }
+        ],
+        "releases": [],
+        "toolResults": []
+      }
+    },
+    {
+      "scenario": "native-child-message-while-child-still-live",
+      "observations": {
+        "whileLive": {
+          "status": "running",
+          "calls": 2,
+          "holds": 1,
+          "goal": {
+            "phase": "active",
+            "activation": "armed",
+            "revision": 1,
+            "roundsStarted": 0,
+            "objective": "Prototype objective"
+          },
+          "turnEnds": 0,
+          "admitted": [
+            {
+              "turn": 1,
+              "kind": "user"
+            },
+            {
+              "turn": 1,
+              "kind": "agent-message"
+            }
+          ],
+          "releases": [
+            "inbox"
+          ],
+          "toolResults": []
+        },
+        "after": {
+          "status": "idle",
+          "calls": 4,
+          "holds": 0,
+          "goal": {
+            "phase": "blocked",
+            "activation": "disarmed",
+            "revision": 2,
+            "roundsStarted": 1,
+            "objective": "Prototype objective"
+          },
+          "turnEnds": 2,
+          "admitted": [
+            {
+              "turn": 1,
+              "kind": "user"
+            },
+            {
+              "turn": 1,
+              "kind": "agent-message"
+            },
+            {
+              "turn": 1,
+              "kind": "subagent-settled"
+            },
+            {
+              "turn": 2,
+              "kind": "goal",
+              "round": 1,
+              "revision": 1
+            }
+          ],
+          "releases": [
+            "inbox",
+            "inbox"
+          ],
+          "toolResults": []
+        }
+      }
+    },
+    {
+      "scenario": "native-one-shot-tool-job-notice",
+      "observations": {
+        "waiting": {
+          "status": "running",
+          "calls": 2,
+          "holds": 1,
+          "goal": {
+            "phase": "active",
+            "activation": "armed",
+            "revision": 1,
+            "roundsStarted": 0,
+            "objective": "Prototype objective"
+          },
+          "turnEnds": 0,
+          "admitted": [
+            {
+              "turn": 1,
+              "kind": "user"
+            }
+          ],
+          "releases": [],
+          "toolResults": [
+            {
+              "name": "subagent",
+              "isError": false
+            }
+          ]
+        },
+        "after": {
+          "status": "idle",
+          "calls": 4,
+          "holds": 0,
+          "goal": {
+            "phase": "blocked",
+            "activation": "disarmed",
+            "revision": 2,
+            "roundsStarted": 1,
+            "objective": "Prototype objective"
+          },
+          "turnEnds": 2,
+          "admitted": [
+            {
+              "turn": 1,
+              "kind": "user"
+            },
+            {
+              "turn": 1,
+              "kind": "tool-jobs"
+            },
+            {
+              "turn": 2,
+              "kind": "goal",
+              "round": 1,
+              "revision": 1
+            }
+          ],
+          "releases": [
+            "inbox"
+          ],
+          "toolResults": [
+            {
+              "name": "subagent",
+              "isError": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "scenario": "autonomous-edit-fresh-native-round-can-complete",
+      "observations": {
+        "refreshed": {
+          "status": "running",
+          "calls": 2,
+          "holds": 1,
+          "goal": {
+            "phase": "active",
+            "activation": "armed",
+            "revision": 2,
+            "roundsStarted": 2,
+            "objective": "Changed autonomous objective"
+          },
+          "turnEnds": 1,
+          "admitted": [
+            {
+              "turn": 1,
+              "kind": "goal",
+              "round": 1,
+              "revision": 1
+            },
+            {
+              "turn": 2,
+              "kind": "goal",
+              "round": 2,
+              "revision": 2
+            }
+          ],
+          "releases": [
+            "goal-change"
+          ],
+          "toolResults": []
+        },
+        "after": {
+          "status": "idle",
+          "calls": 5,
+          "holds": 0,
+          "goal": {
+            "phase": "complete",
+            "activation": "disarmed",
+            "revision": 3,
+            "roundsStarted": 2,
+            "objective": "Changed autonomous objective"
+          },
+          "turnEnds": 2,
+          "admitted": [
+            {
+              "turn": 1,
+              "kind": "goal",
+              "round": 1,
+              "revision": 1
+            },
+            {
+              "turn": 2,
+              "kind": "goal",
+              "round": 2,
+              "revision": 2
+            },
+            {
+              "turn": 2,
+              "kind": "tool-jobs"
+            },
+            {
+              "turn": 2,
+              "kind": "tool-goal"
+            }
+          ],
+          "releases": [
+            "goal-change",
+            "inbox"
+          ],
+          "toolResults": [
+            {
+              "name": "get_goal",
+              "isError": false
+            },
+            {
+              "name": "update_goal",
+              "isError": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "scenario": "nonhuman-followup-alone-has-no-completion-authority",
+      "observations": {
+        "status": "running",
+        "calls": 2,
+        "holds": 0,
+        "goal": {
+          "phase": "active",
+          "activation": "armed",
+          "revision": 1,
+          "roundsStarted": 0,
+          "objective": "Prototype objective"
+        },
+        "turnEnds": 0,
+        "admitted": [
+          {
+            "turn": 1,
+            "kind": "tool-jobs"
+          }
+        ],
+        "releases": [],
+        "toolResults": [
+          {
+            "name": "get_goal",
+            "isError": false
+          },
+          {
+            "name": "update_goal",
+            "isError": true,
+            "code": "GOAL_TOOL_AUTHORITY_REQUIRED"
+          }
+        ]
+      }
+    }
+  ],
+  "repeatRuns": 3,
+  "repeatObservationsIdentical": true
+}

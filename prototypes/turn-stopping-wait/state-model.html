@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>收尾等待闸门 · 研究原型</title>
+<style>body{font:16px/1.65 system-ui,sans-serif;color:#18232f;background:#f5f7fa;max-width:960px;margin:36px auto;padding:0 20px}h1{line-height:1.2}section{background:white;padding:22px;border:1px solid #dce3ea;border-radius:12px;margin:18px 0}.note{color:#526275}button{font:inherit;padding:7px 12px;border:1px solid #b8c8d8;border-radius:7px;background:#fff;margin:4px;cursor:pointer}.selected{background:#0b6470;color:white}dl{display:grid;grid-template-columns:190px 1fr;gap:8px}dt{color:#526275}dd{margin:0;font-weight:600}pre{white-space:pre-wrap;background:#edf4f7;padding:14px;border-radius:8px}.step{background:#e7f3f2}small{color:#526275}</style>
+<h1>收尾等待闸门</h1><p>能否不撤销 goal 授权，只延迟主 agent 进入 idle，让原生 driver 继续管理轮次？</p><p class="note"><strong>THROWAWAY 研究原型，不是插件。</strong>这里是纯状态模拟，不连接 DSH、不执行工具、不验证真实模型行为。真实原生模块的 30 个实验场景见同目录 observations.json；目前不建议替换已安装方案。</p>
+<section><h2>当前状态</h2><dl id="state"></dl><pre id="explanation"></pre></section>
+<section><h2>自由探索</h2><div id="actions"></div></section>
+<section><h2>引导场景</h2><div id="tabs"></div><p id="scenarioText"></p><div id="steps"></div></section>
+<script>
+// Pure reducer: no DOM, persistence, network or DSH state.
+const initial=()=>({phase:'active',activation:'armed',revision:1,sourceRevision:1,status:'running',waiting:false,gateEnabled:true,live:0,pending:0,nextTurn:false,turn:1,rounds:0,calls:1,finish:'stop',note:'初始人类工作轮次已响应；准备决定是否收尾。'});
+function transition(state,action){const s={...state};switch(action){
+case 'reset':return initial();
+case 'job':s.live++;s.note='后台工作增加；普通后台工作不会自动决定父 agent 状态。';break;
+case 'stop':if(s.finish==='max-tokens'){s.waiting=false;s.status='idle';s.activation='disarmed';s.note='输出截断必须交回原生结束处理，不得继续挂住。';}else if(s.gateEnabled&&s.live&&s.phase==='active'&&s.activation==='armed'&&!s.pending){s.status='running';s.waiting=true;s.note='停在收尾等待点：不调用模型，不增加轮次，不改变 goal 授权。';}else{s.waiting=false;s.status=s.pending?'running':'idle';s.note=s.pending?'已有输入，让原生循环继续处理。':'允许收尾；是否续轮交给原生 driver。';}break;
+case 'notice':if(s.live)s.live--;s.pending++;s.waiting=false;s.note='完成回报入队并解除等待；不能先等回报被模型消费再解除。';break;
+case 'childMessage':s.pending++;s.waiting=false;s.note='子 agent 尚未结束但需要父决策：先解除等待，避免循环等待。';break;
+case 'human':s.pending++;s.nextTurn=true;s.waiting=false;s.note='用户 followup 到达：解除等待，原生循环随后开启新 turn。';break;
+case 'process':if(s.waiting){s.note='等待 promise 未释放，入队不等于模型已经处理。';break;}if(s.pending){s.calls++;s.pending=0;if(s.nextTurn){s.turn++;s.nextTurn=false;}s.status='running';s.note='模型处理已入队输入；同 turn 的 inject/steer 不消耗新的 goal round。';}else s.note='没有待处理输入。';break;
+case 'nativeRound':if(s.status==='idle'&&s.phase==='active'&&s.activation==='armed'){s.rounds++;s.calls++;s.turn++;s.status='running';s.sourceRevision=s.revision;s.note='原生 driver 预留并准入下一轮；模拟没有自行构造 goal 提示。';}else s.note='原生条件不满足，不应续轮。';break;
+case 'cancel':s.waiting=false;s.status='idle';s.activation='disarmed';s.pending=0;s.note='等待器响应 abort；原生生命周期随后收口并撤销自动授权。';break;
+case 'edit':s.revision++;s.waiting=false;s.note='目标 revision 改变：放行收尾，允许原生新轮次取得新身份；旧轮次来源不会自动刷新。';break;
+case 'complete':if(s.sourceRevision!==s.revision){s.note='旧自主轮次身份失配：仅 get_goal 不补权限，需原生新轮次。';}else{s.phase='complete';s.activation='disarmed';s.waiting=false;s.note='目标完成；继续交给原生处理收尾上下文，不再续轮。';}break;
+case 'cutoff':s.finish='max-tokens';s.note='模型输出被截断；下一收尾决策必须不挂住原生保护。';break;
+case 'unload':s.gateEnabled=false;s.waiting=false;s.note='卸载等待器，释放它自己的 promise；恢复原生行为，不能自行重新 armed。';break;
+}return s;}
+const actions=[['job','启动后台工作'],['stop','准备收尾'],['notice','工作完成并回报'],['childMessage','子 agent 请求协助'],['human','用户发送 followup'],['process','处理入队输入'],['nativeRound','原生判断续轮'],['edit','修改目标'],['complete','尝试完成目标'],['cutoff','输出截断'],['cancel','取消'],['unload','卸载闸门'],['reset','重置']];
+const cases=[
+{title:'正常等待',text:'等待期间目标仍 armed；回报先被处理，随后才允许原生续轮。',steps:['job','stop','notice','process','stop','nativeRound']},
+{title:'父子协作',text:'不能只等子 agent 完全结束；它可能需要父 agent 的回答。',steps:['job','stop','childMessage','process','stop','notice','process','stop']},
+{title:'用户输入',text:'Followup 让原生循环开新 turn；工作仍存在时可以重新等待。',steps:['job','stop','human','process','stop']},
+{title:'目标修改',text:'这个简化场景只展示自主 goal source 的 revision 问题，不代表人类轮次的全部权限。',steps:['job','stop','edit','complete','stop','nativeRound','notice','process','complete']},
+{title:'取消与卸载',text:'等待 promise 必须显式释放；卸载后原生 driver 可能重新续轮，即使业务工作还在。',steps:['job','stop','unload','stop','nativeRound','cancel']},
+{title:'截断保护',text:'max-tokens 同样经过 stopping；盲等会延迟原生撤权。',steps:['job','cutoff','stop','nativeRound']}
+];
+let state=initial(),activeCase=0,step=0;
+const labels={phase:'目标阶段',activation:'自动续轮授权',revision:'目标版本',sourceRevision:'自主轮次来源版本',status:'主 agent 状态',waiting:'停在等待点',gateEnabled:'等待器已启用',live:'未结束业务工作',pending:'待处理输入',turn:'物理轮次',rounds:'Goal 续轮计数',calls:'模型调用次数',finish:'最近模型结束原因'};
+function render(){document.getElementById('state').replaceChildren();for(const [key,label]of Object.entries(labels)){const dt=document.createElement('dt');dt.textContent=label;const dd=document.createElement('dd');dd.textContent=typeof state[key]==='boolean'?(state[key]?'是':'否'):state[key];document.getElementById('state').append(dt,dd);}document.getElementById('explanation').textContent=state.note;document.getElementById('scenarioText').textContent=cases[activeCase].text;document.getElementById('tabs').replaceChildren();cases.forEach((c,i)=>{const b=document.createElement('button');b.textContent=c.title;b.className=i===activeCase?'selected':'';b.onclick=()=>{activeCase=i;step=0;state=initial();render();};document.getElementById('tabs').append(b);});document.getElementById('steps').replaceChildren();cases[activeCase].steps.forEach((a,i)=>{const b=document.createElement('button');b.textContent=(i+1)+'. '+actions.find(x=>x[0]===a)[1];b.disabled=i!==step;b.className=i===step?'step':'';b.onclick=()=>{state=transition(state,a);step++;render();};document.getElementById('steps').append(b);});}
+for(const[a,label]of actions){const b=document.createElement('button');b.textContent=label;b.onclick=()=>{state=transition(state,a);render();};document.getElementById('actions').append(b);}render();
+</script><small>原型仅辅助理解；真实可行性边界以研究报告和原生实验记录为准。无持久化、无服务器、无网络请求。</small></html>

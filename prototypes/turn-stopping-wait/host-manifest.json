@@ -1,0 +1,47 @@
+[
+  {
+    "package": "@deepseek-ai/cordis",
+    "version": "4.0.4",
+    "entrySha256": "6a9394c0877ff45218818c6e815edd038f8057e1a1deb390a8d43ec81c57691e"
+  },
+  {
+    "package": "@deepseek-ai/dsh-agent-loop",
+    "version": "0.2.0-rc.2",
+    "entrySha256": "00c4814d63f3d1e2754eb09144832d19b30499d6ea444730473f740b587948c2"
+  },
+  {
+    "package": "@deepseek-ai/dsh-goal",
+    "version": "0.2.0-rc.2",
+    "entrySha256": "8ec52107ead3d31f4d8ca95894c851046a2cbbd1b2033a0ea22fedf17c043ae4"
+  },
+  {
+    "package": "@deepseek-ai/dsh-goal-round-driver",
+    "version": "0.2.0-rc.2",
+    "entrySha256": "3bca01a2e87de1683fa8b55ad54688eefc4e366c971c20e9afd654db3b5ab450"
+  },
+  {
+    "package": "@deepseek-ai/dsh-tool-goal",
+    "version": "0.2.0-rc.2",
+    "entrySha256": "7220fa7b5b7c95c94377ac32c6b01ecac5b4853d9dec3a48ab17d371cda63e6c"
+  },
+  {
+    "package": "@deepseek-ai/dsh-jobs-local",
+    "version": "0.2.0-rc.2",
+    "entrySha256": "3bed0cd38c649f39b148752e742ff1ef57696a6b9b11b15ff8cc6cd1d4f08f26"
+  },
+  {
+    "package": "@deepseek-ai/dsh-tool-jobs",
+    "version": "0.2.0-rc.2",
+    "entrySha256": "660066155801b20c67e6e288820961a365fe65738ffee1a16e50a2394ac9c7c6"
+  },
+  {
+    "package": "@deepseek-ai/dsh-subagent",
+    "version": "0.2.0-rc.2",
+    "entrySha256": "75b50b1c9452a6aeb10d1c859e3f45b05e062ea1fad6ed3bcd9577f2bc912541"
+  },
+  {
+    "package": "@deepseek-ai/dsh-tool-subagent",
+    "version": "0.2.0-rc.2",
+    "entrySha256": "26a1e804aab4c6f9cb53a670c63b817fc8d9409569e6d68eda6fda33b966a840"
+  }
+]
