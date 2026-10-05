@@ -10,4 +10,4 @@ Issues and specs live in this repo's GitHub Issues, driven by the `gh` CLI. See 
 
 ### Domain docs
 
-Single-context layout: `CONTEXT.md` at the repo root plus decisions in `docs/adr/`. See `docs/agents/domain.md`.
+Single-context layout: `GLOSSARY.md` at the repo root plus decisions in `docs/adr/`. See `docs/agents/domain.md`.

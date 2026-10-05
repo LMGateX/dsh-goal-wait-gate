@@ -10,7 +10,7 @@ status: accepted
 
 后台 job 或 subagent 尚在工作时，父 agent 的 idle 不代表整项任务停工。自动 goal 续轮可能反复唤醒模型，却没有新结果可处理。另一方面，执行中现实可能变化，模型需要理解当前目标，用户也可能修改目标；不能把“等待已有工作”解释为“目标不再有效”。
 
-本记录的行为基线是实际安装的 DSH `0.2.0-rc.2` 的 goal、goal tools、goal-round-driver 和 agent loop 实现。它不是所有历史版本或未来版本的保证，也不是仅凭设计哲学推导出的结论。术语见[词汇表](<../../CONTEXT.md>)。
+本记录的行为基线是实际安装的 DSH `0.2.0-rc.2` 的 goal、goal tools、goal-round-driver 和 agent loop 实现。它不是所有历史版本或未来版本的保证，也不是仅凭设计哲学推导出的结论。术语见[词汇表](<../../GLOSSARY.md>)。
 
 ## 已核实的区别
 

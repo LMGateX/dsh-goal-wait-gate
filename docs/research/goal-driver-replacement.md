@@ -1,6 +1,6 @@
 # Goal driver 替换与多策略配置研究：DSH 0.2.0-rc.2
 
-> **状态：源码研究 + 32 个隔离原生模块场景已完成；未达到生产验收、未迁移、未作新 ADR 决策。** 本报告只评估方案，不修改已安装包、profile、运行中会话或插件实现。已有 [ADR-0001](<../adr/0001-retain-activation-gate.md>) 仍有效；术语沿用 [CONTEXT](<../../CONTEXT.md>)。既有 running-wait 实验见[收尾等待研究](<turn-stopping-wait-gate.md>)，不能当作 replacement 实验结果。
+> **状态：源码研究 + 32 个隔离原生模块场景已完成；未达到生产验收、未迁移、未作新 ADR 决策。** 本报告只评估方案，不修改已安装包、profile、运行中会话或插件实现。已有 [ADR-0001](<../adr/0001-retain-activation-gate.md>) 仍有效；术语沿用 [GLOSSARY](<../../GLOSSARY.md>)。既有 running-wait 实验见[收尾等待研究](<turn-stopping-wait-gate.md>)，不能当作 replacement 实验结果。
 
 ## 1. 结论：哪一种“更便宜”？
 
@@ -32,7 +32,7 @@
 | S | [subagent 上游](https://github.com/deepseek-ai/deepseek-harness/tree/master/packages/subagent/subagent) | `lib/index.js`：childSessionMeta 455–478；watchSettlement/settlementState/finishDisposal/notifySettlement 1155–1271；runningDescendants 2268–2289。 |
 | P | [subagent-in-process-driver 上游](https://github.com/deepseek-ai/deepseek-harness/tree/master/packages/subagent/subagent-in-process-driver) | `lib/index.js`：startInProcessRun/drivePublishedRun/readResult 161–253；one-shot 的发布、result、取消与 disposal 是独立协议。 |
 
-Repo 基线：[AGENTS](<../../AGENTS.md>)、[CONTEXT](<../../CONTEXT.md>)、最新 [ADR](<../adr/0001-retain-activation-gate.md>) 与既有[研究](<turn-stopping-wait-gate.md>)。当前配置只有 waitForJobs/waitForSubagents/maxHoldMs；以下 strategy 字段是建议，不是功能，见 [config](<../../src/config.ts>)、[activation 实现](<../../src/gate.ts>) 与 [selector](<../../src/live-work.ts>)。
+Repo 基线：[AGENTS](<../../AGENTS.md>)、[GLOSSARY](<../../GLOSSARY.md>)、最新 [ADR](<../adr/0001-retain-activation-gate.md>) 与既有[研究](<turn-stopping-wait-gate.md>)。当前配置只有 waitForJobs/waitForSubagents/maxHoldMs；以下 strategy 字段是建议，不是功能，见 [config](<../../src/config.ts>)、[activation 实现](<../../src/gate.ts>) 与 [selector](<../../src/live-work.ts>)。
 
 ## 3. replacement 必须保留的最小责任集
 

@@ -6,7 +6,7 @@
 
 ## 1. 基线、证据与源码结论
 
-基线为实际安装发布包中的 `@deepseek-ai/dsh-agent-loop`、`dsh-agent`、`dsh-goal`、`dsh-goal-round-driver`、`dsh-tool-goal`、`dsh-subagent`、`dsh-tool-jobs` **`0.2.0-rc.2`**，事件总线为 `@deepseek-ai/cordis` **`4.0.4`**。结论来自直接读取这些包的 `package.json`、`lib/index.js`、相关 `lib/types` 和 Cordis `src/events.ts`，不是以最新文档替代安装版本。术语沿用 [CONTEXT](<../../CONTEXT.md>)。
+基线为实际安装发布包中的 `@deepseek-ai/dsh-agent-loop`、`dsh-agent`、`dsh-goal`、`dsh-goal-round-driver`、`dsh-tool-goal`、`dsh-subagent`、`dsh-tool-jobs` **`0.2.0-rc.2`**，事件总线为 `@deepseek-ai/cordis` **`4.0.4`**。结论来自直接读取这些包的 `package.json`、`lib/index.js`、相关 `lib/types` 和 Cordis `src/events.ts`，不是以最新文档替代安装版本。术语沿用 [GLOSSARY](<../../GLOSSARY.md>)。
 
 **核心结论：能阻止父 agent 进入 idle，从而推迟官方 driver；不能同时让父 agent 在未释放的 await 内处理新输入。** 因此这是一种“占住当前 turn 的协作式等待”，不是独立的 scheduling defer。若接受 `running` 等待的产品语义，并在任何待处理输入、abort、终态与卸载时及时释放，源码没有排除做隔离原型的可能；目前不足以替换 activation 闸门。[S1][S2][S3]
 
