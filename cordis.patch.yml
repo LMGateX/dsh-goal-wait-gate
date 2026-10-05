@@ -1,0 +1,22 @@
+# dsh-goal-wait-gate — DSH bundle layer.
+#
+# A profile composes as: every bundle named in dsh.profile.bundles (in order),
+# then the profile's own cordis.patch.yml, then any --patch overlays. This file
+# is the plugin's mount declaration, so the package can be installed and
+# switched on like any other bundle instead of being inserted by hand:
+#
+#   dsh plugin --profile web add dsh-goal-wait-gate
+#
+# The row id stays goal-wait-gate, so an existing profile override keeps
+# applying. Policy defaults live in the plugin (waitForJobs=true,
+# waitForSubagents=true, maxHoldMs=0); override them in the profile layer:
+#
+#   - id: goal-wait-gate
+#     config:
+#       waitForJobs: false
+#
+# Do not also insert this row by hand in the profile patch: two entries with
+# the same id mount the gate twice.
+- insert:
+    - id: goal-wait-gate
+      name: dsh-goal-wait-gate

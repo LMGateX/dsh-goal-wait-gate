@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Goal wait gate",
+    "description": "Withholds automatic goal continuation while the session still owns live background work — running or stopping jobs, or live subagent descendants."
+  }
+}

@@ -45,3 +45,6 @@ _Avoid_: Supported version, minimum version
 
 **Ported behavior**: The native semantics the pinned bundle of a host profile actually has, selected from that artifact identity. It is never inferred from a version string or supplied by configuration.
 _Avoid_: Version feature flag
+
+**Bundle layer**: The mount declaration a plugin package ships — `package.json.dsh.bundle.patch` plus that patch file — which a profile switches on by naming the package in `dsh.profile.bundles`. It is what makes a plugin appear on the Plugins page; it is distinct from a hand-written patch row and from a plugin's runtime mount.
+_Avoid_: Plugin install, patch snippet

@@ -8,7 +8,7 @@ A DeepSeek Harness (DSH) plugin that **withholds automatic goal continuation whi
 
 A separate TypeScript `dsh-goal-wait-gate/startup` export implements mutually exclusive activation (default), replacement, native and off startup strategies, ported against the exact published goal-round drivers of DSH `0.2.0-rc.2` and `0.2.1-alpha.1`. It does **not** change the root export or the default strategy. [Support contract and delivery status](<docs/startup-driver.md>) and [opt-in decision](<docs/adr/0002-opt-in-pinned-driver.md>) describe the pin table, direct-root-only bootstrap, work/cleanup limits and the explicit late-admission counterexample. It is **not an ordinary profile/Loader row or GUI integration**, and no hot switching is supported.
 
-0.2.1 is a GitHub source release (tag `v0.2.1`); it is not published to npm, so install it from the checkout or a release tarball. The package declares no runtime dependencies (peer dependencies only, mostly optional), so a consumer install does not resolve an ambient dependency graph. The development lock graph was regenerated incidentally during implementation, so clean frozen-lock installation and native dependency-build policy for repository development remain unverified. The installation/configuration sections below refer **only to the legacy bridge**.
+0.3.0 is a GitHub source release (tag `v0.3.0`); it is not published to npm, so install it from the checkout or a release tarball. The package declares no runtime dependencies (peer dependencies only, mostly optional), so a consumer install does not resolve an ambient dependency graph. The development lock graph was regenerated incidentally during implementation, so clean frozen-lock installation and native dependency-build policy for repository development remain unverified. The installation/configuration sections below refer **only to the legacy bridge**.
 
 ## The problem
 
@@ -64,22 +64,22 @@ pnpm install
 pnpm build
 ```
 
-Make the package resolvable from the profile (any install method works; this uses the profile's own pnpm):
+The package ships a **DSH bundle layer** (`cordis.patch.yml`), so the ordinary bundle path installs and mounts it in one step:
 
 ```bash
-dsh plugin --profile web add /absolute/path/to/dsh-goal-wait-gate
+dsh plugin --profile web add /absolute/path/to/dsh-goal-wait-gate   # checkout, tarball or link:<path>
 ```
 
-Then add this to the profile's patch layer, `$DSH_HOME/profiles/web/cordis.patch.yml`:
+That records the dependency and appends `dsh-goal-wait-gate` to the profile's `dsh.profile.bundles`, which is what switches the layer on; the sidebar **Plugins** page then lists it with its row, an on/off switch and its version, and `dsh plugin --profile web remove dsh-goal-wait-gate` removes both again. To mount it by hand instead, add the package to `dsh.profile.bundles` and leave the profile patch layer alone.
+
+**Migrating from a pre-bundle install:** delete the block between `# >>> dsh-goal-wait-gate >>>` and `# <<< dsh-goal-wait-gate <<<` in `$DSH_HOME/profiles/web/cordis.patch.yml`. The bundle layer mounts the same row id, so keeping both mounts the gate twice.
+
+Policy defaults live in the plugin: `waitForJobs=true`, `waitForSubagents=true`, `maxHoldMs=0`. The profile patch layer is applied **after** every bundle, so it still overrides them:
 
 ```yaml
-- insert:
-    - id: goal-wait-gate
-      name: 'dsh-goal-wait-gate'
-      config:
-        waitForJobs: true
-        waitForSubagents: true
-        maxHoldMs: 0
+- id: goal-wait-gate
+  config:
+    waitForJobs: false
 ```
 
 **Do not disable `goal-round-driver`.** The gate is designed to sit beside it: the driver still owns round reservation, the round prompt, accounting, and the race fences; the gate only decides whether continuation is armed.
@@ -101,19 +101,19 @@ pnpm typecheck     # TypeScript, no emit (development tests/build require Node 2
 pnpm test          # native startup/ownership assertions plus separate legacy fake-service tests
 pnpm check:hosts   # legacy entry/tests ONLY; typecheck supported hosts in isolated copies (default: 0.1.7-alpha.2, 0.1.7-rc.2, 0.2.0-rc.2)
 node scripts/check-startup-host.ts <dir>  # typecheck the shipped src/ against a DSH installation that already exists; reports whether that exact identity is pinned
-pnpm check:patch   # isolated dry run of the patch above against the local profile composition
+pnpm check:bundle  # isolated dry run of the shipped bundle layer against the local profile composition
 pnpm check         # all of the above
 ```
 
 On every DSH upgrade, follow the [upstream watch checklist](<docs/upstream-goal-watch.md>), rerun `pnpm check:hosts <new-version>`, and run the startup host gate against the new installation. A new host pin requires porting the published driver difference and its fingerprint, not just widening a range. Widen the `@deepseek-ai/dsh*` peer ranges in `package.json` only if needed and after checking the new version’s behavior; matching types and peers alone do not prove runtime compatibility. DSH 0.2 and later refuse a plugin whose peers do not accept the running version — the boot log reads `disabling profile plugin goal-wait-gate: Plugin dsh-goal-wait-gate@<version> is incompatible with dsh <version>` — and `dsh plugin allow-version` is the explicit per-plugin override.
 
-**Isolation.** Every check stays inside this repository. The startup host gate never installs: it only reads a DSH installation the operator points at, through symlinks, and writes its copy of `src/` under `.host-compat/`. `check:hosts` installs each host's packages into its own `.host-compat/` copy; `check:patch` builds a `.patch-check/` DSH home that symlinks the profile's `node_modules` but copies its small config files, then runs `dsh --dump-config`. No live profile, session store, or running server is written to or contacted.
+**Isolation.** Every check stays inside this repository. The startup host gate never installs: it only reads a DSH installation the operator points at, through symlinks, and writes its copy of `src/` under `.host-compat/`. `check:hosts` installs each host's packages into its own `.host-compat/` copy; `check:bundle` builds a `.bundle-check/` DSH home that symlinks the profile's `node_modules` (this repository standing in for the installed plugin) but copies its small config files, strips the pre-bundle insert from that copy, then runs `dsh --dump-config` twice and asserts what the host's own `readProfilePlugins`/`readPluginMeta`/compatibility readers see. No live profile, session store, or running server is written to or contacted.
 
 ### Live acceptance (manual)
 
 Use a dedicated disposable DSH home/profile and a test session. Do not reload a shared profile, restart a working GUI, or reuse other users’ running sessions for acceptance experiments. Adapt the install and patch examples to that isolated profile.
 
-1. Build, mount, and patch as above in the isolated environment; reload only that test profile.
+1. Build and mount as above in the isolated environment; reload only that test profile.
 2. In its test session: create a goal, start a long background job (`run_in_background: true`), and end the turn asking the agent to wait for the completion notice.
 3. **Pass**: no `<goal_round>` appears while the job runs; `get_goal` shows `active` + `disarmed` and the round count unchanged; exactly one continuation round follows the completion notice.
 4. **Control**: with the plugin unmounted, the same sequence produces a `<goal_round>` within seconds.

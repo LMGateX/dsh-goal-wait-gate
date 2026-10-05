@@ -31,8 +31,13 @@ import { goalWaitStartup, type StartupConfig } from '../src/startup.ts'
 async function hostInvariantPlugins(): Promise<Plugin<void>[]> {
   const driver = dirname(fileURLToPath(import.meta.resolve('@deepseek-ai/dsh-goal-round-driver/package.json')))
   const plugins: Plugin<void>[] = []
-  if (existsSync(join(driver, '..', 'dsh-invariants', 'package.json'))) plugins.push((await import('@deepseek-ai/dsh-invariants')).default as Plugin<void>)
-  if (existsSync(join(driver, 'lib', 'invariant.js'))) plugins.push(await import('@deepseek-ai/dsh-goal-round-driver/invariant') as Plugin<void>)
+  // These specifiers stay non-literal on purpose: a host that dropped the
+  // companions does not have the package or the subpath at all, and a literal
+  // specifier would fail type resolution even though the guard never imports it.
+  const invariants: string = '@deepseek-ai/dsh-invariants'
+  const driverInvariant: string = '@deepseek-ai/dsh-goal-round-driver/invariant'
+  if (existsSync(join(driver, '..', 'dsh-invariants', 'package.json'))) plugins.push((await import(invariants)).default as Plugin<void>)
+  if (existsSync(join(driver, 'lib', 'invariant.js'))) plugins.push(await import(driverInvariant) as Plugin<void>)
   return plugins
 }
 

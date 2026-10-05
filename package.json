@@ -1,6 +1,6 @@
 {
   "name": "dsh-goal-wait-gate",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "DSH plugin that withholds automatic goal continuation while the owning agent still has live background work",
   "type": "module",
   "license": "MIT",
@@ -13,10 +13,18 @@
       "types": "./lib/types/startup.d.ts",
       "default": "./lib/startup.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
   },
   "files": [
     "lib",
+    "cordis.patch.yml",
+    "locale",
     "README.md",
     "LICENSE",
     "docs/startup-driver.md"
@@ -31,10 +39,10 @@
     "prepack": "node node_modules/typescript/lib/tsc.js -p tsconfig.build.json && node scripts/copy-driver-assets.ts",
     "check:hosts": "node scripts/check-host-compat.mjs",
     "check:startup-host": "node scripts/check-startup-host.ts",
-    "check:patch": "node scripts/check-profile-patch.mjs",
-    "check": "pnpm typecheck && pnpm test && pnpm check:hosts && pnpm check:patch",
+    "check:bundle": "node scripts/check-bundle-layer.mjs",
+    "check": "pnpm typecheck && pnpm test && pnpm check:hosts && pnpm check:bundle",
     "test:legacy": "node --test test/plugin.test.ts",
-    "test:native": "node --test test/startup.test.ts test/ownership.test.ts test/host-profile.test.ts"
+    "test:native": "node --test test/startup.test.ts test/ownership.test.ts test/host-profile.test.ts test/bundle-manifest.test.ts"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.4",

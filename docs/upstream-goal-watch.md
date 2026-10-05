@@ -59,7 +59,7 @@
    pnpm typecheck
    pnpm test
    pnpm check:hosts <new-version>
-   pnpm check:patch
+   pnpm check:bundle
    ```
 
 4. 在隔离环境执行下面的场景。涉及真实模型时，要检查实际输入/工具结果，不以 UI 中存在目标或模块成功 import 代替模型可见性证据。
@@ -118,4 +118,10 @@ Related evidence and ADR: ADR-0001、ADR-0002、docs/startup-driver.md
 ```
 
 结论：0.2.1-alpha.1 的 goal 侧改动是队列结算修正与 invariant 体系迁移，**不是**原生后台工作感知或调度 defer 契约；因此 activation 闸门与 opt-in startup 的必要性都不变。若上游开始原生检查 session 自有 job/subagent 存活，再按"候选调度 seam 的验收条件"复核并考虑停用重复闸门。
+
+## 观察记录：插件页只渲染 bundle，不属于 bundle 的 Loader 行没有入口
+
+2026-10-05 于 DSH 0.2.1-alpha.1 复核：`dsh-client-ui-plugin-manager` 的 Plugins 面板以 `packages = listBundles().map(bundle => packageView(bundle, plugins))` 组卡，行只挂在自己 bundle 的卡片内；`dsh-plugin-manager` 的 `listBundles()` 对**非 bundle 依赖**只在它同时被选入 `dsh.profile.bundles` 时才列出（且以 `not-bundle` 错误呈现），而 `bundleManifest()` 只认声明了 `package.json.dsh.bundle.patch` 的包。因此"普通依赖 + 手写 `insert` 行"这种交付方式虽然能正常挂载，却在插件页完全不可见，也没有启停入口；设置里的只读「插件列表」虽然直接读 Loader 因而能看到该行，但那是诊断视图而非管理入口。
+
+本仓库据此把交付形态改为标准 bundle 层（见 [ADR 0003](<adr/0003-ship-as-profile-bundle.md>)），不再等待上游改变这一缺口；上游是否给"无主 Loader 行"提供视图不影响本插件的安装与可见性。此观察只记录事实与影响范围，不作为阻塞项，也不推断 master 行为。
 
