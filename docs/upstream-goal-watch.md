@@ -96,3 +96,26 @@ Related evidence and ADR:
 ```
 
 公开文档和 issue 只记录仓库相对定位、上游 permalink 或通用路径占位符；不复制机器绝对路径、profile/session 标识、私密日志或凭据。
+
+## 复核记录：DSH 0.2.1-alpha.1
+
+按上文模板填写；只使用发布包内可核对的证据，不推断 master。
+
+```text
+DSH version / upstream commit or package evidence: 0.2.1-alpha.1 发布包（dist-tag alpha）；以包内 bundle、类型目录与 README 为准
+Plugin version / commit: 0.2.0 功能分支（本次 pin 提交）
+Changes in scheduling seam: 无。goal-round-driver/lib/index.js 相对 rc.2 只有一处 idle 结算差异；agent-loop、agent、jobs、jobs-local、tool-jobs、tool-goal、command-goal 与 goal 的执行 bundle 逐字节相同。新增包只有 dsh-tool-schedule 与 dsh-experimental-inspector*，与 goal 调度无关。
+Changes in phase / activation / revision / ownership: 无（goal 执行 bundle 未变化）。
+Changes in edit and completion authority: 无（tool-goal、command-goal bundle 未变化）。
+Changes in model-visible goal context: 无。
+Changes in jobs / subagent lifecycle: 执行代码未变化；变化是各包移除 invariant companion（lib/invariant.js），dsh-invariants 不再随发行版提供。
+Queued-round refinement: agent 到达 idle 时仍在排队的 round 提示会从 inbox 移除；被取消轮次属于其他工作时续行 disarm 而非 pause（README.zh 明示）。它清理残留 reservation，不检查后台工作。
+Automated checks actually run and results: 86/86（本机 rc.2）与 86/86（0.2.1-alpha.1 只读隔离安装）；src/ 通过两套声明树类型检查；未 pin 版本、错误指纹、混合版本均被拒绝；行为 flag 双向 mutation 红/绿。
+Isolated integration scenarios actually run and results: 未运行真实模型场景；native fixture 覆盖 idle、queued/claimed/admitted 取消、冻结排队消息与通知顺序，不覆盖真实用户会话或模型目标感知。
+Skipped checks / limitations / unresolved risks: 未验证真实 profile 安装、GUI 与真实模型可见性；driver 仍无后台工作视角，最后 pre-step→request 窗口仍在。
+Decision: retain gate（上游未原生处理后台等待，必要性未消除）
+Related evidence and ADR: ADR-0001、ADR-0002、docs/startup-driver.md
+```
+
+结论：0.2.1-alpha.1 的 goal 侧改动是队列结算修正与 invariant 体系迁移，**不是**原生后台工作感知或调度 defer 契约；因此 activation 闸门与 opt-in startup 的必要性都不变。若上游开始原生检查 session 自有 job/subagent 存活，再按"候选调度 seam 的验收条件"复核并考虑停用重复闸门。
+
