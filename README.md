@@ -55,6 +55,7 @@ A clean future migration requires a public scheduling defer **and re-evaluation*
 - DSH `0.1.7-alpha.2` through `0.2.0-rc.2` (declared peer range `>=0.1.7-alpha.2 <0.3`). DSH 0.2 enforces these peers **at load time with prereleases included**: a range that does not accept the running version makes the loader refuse the plugin (the explicit override is `dsh plugin allow-version`). `pnpm check:hosts` verifies the range against every host in the matrix.
 - Node >= 22.
 - Services: `agents` and `goals` are required; `jobs` is optional (without it, only subagent work gates).
+- The opt-in `dsh-goal-wait-gate/startup` owner is stricter than that peer range: it runs only on an exactly pinned published host — today `0.2.0-rc.2` and `0.2.1-alpha.1` — matched by package versions **and** the published native driver SHA-256 together. Any other distribution, including a newer alpha, is refused before a driver is mounted. Support is per artifact identity, not a version range; see the [support contract](<docs/startup-driver.md>).
 
 ## Install
 
@@ -99,13 +100,14 @@ Invalid configuration fails at load with an error naming the field.
 pnpm typecheck     # TypeScript, no emit (development tests/build require Node 24+)
 pnpm test          # native startup/ownership assertions plus separate legacy fake-service tests
 pnpm check:hosts   # legacy entry/tests ONLY; typecheck supported hosts in isolated copies (default: 0.1.7-alpha.2, 0.1.7-rc.2, 0.2.0-rc.2)
+node scripts/check-startup-host.ts <dir>  # typecheck the shipped src/ against a DSH installation that already exists; reports whether that exact identity is pinned
 pnpm check:patch   # isolated dry run of the patch above against the local profile composition
 pnpm check         # all of the above
 ```
 
-On every DSH upgrade, follow the [upstream watch checklist](<docs/upstream-goal-watch.md>) and rerun `pnpm check:hosts <new-version>`. Widen the `@deepseek-ai/dsh*` peer ranges in `package.json` only if needed and after checking the new version’s behavior; matching types and peers alone do not prove runtime compatibility. DSH 0.2 and later refuse a plugin whose peers do not accept the running version — the boot log reads `disabling profile plugin goal-wait-gate: Plugin dsh-goal-wait-gate@<version> is incompatible with dsh <version>` — and `dsh plugin allow-version` is the explicit per-plugin override.
+On every DSH upgrade, follow the [upstream watch checklist](<docs/upstream-goal-watch.md>), rerun `pnpm check:hosts <new-version>`, and run the startup host gate against the new installation. A new host pin requires porting the published driver difference and its fingerprint, not just widening a range. Widen the `@deepseek-ai/dsh*` peer ranges in `package.json` only if needed and after checking the new version’s behavior; matching types and peers alone do not prove runtime compatibility. DSH 0.2 and later refuse a plugin whose peers do not accept the running version — the boot log reads `disabling profile plugin goal-wait-gate: Plugin dsh-goal-wait-gate@<version> is incompatible with dsh <version>` — and `dsh plugin allow-version` is the explicit per-plugin override.
 
-**Isolation.** Every check stays inside this repository. `check:hosts` installs each host's packages into its own `.host-compat/` copy; `check:patch` builds a `.patch-check/` DSH home that symlinks the profile's `node_modules` but copies its small config files, then runs `dsh --dump-config`. No live profile, session store, or running server is written to or contacted.
+**Isolation.** Every check stays inside this repository. The startup host gate never installs: it only reads a DSH installation the operator points at, through symlinks, and writes its copy of `src/` under `.host-compat/`. `check:hosts` installs each host's packages into its own `.host-compat/` copy; `check:patch` builds a `.patch-check/` DSH home that symlinks the profile's `node_modules` but copies its small config files, then runs `dsh --dump-config`. No live profile, session store, or running server is written to or contacted.
 
 ### Live acceptance (manual)
 

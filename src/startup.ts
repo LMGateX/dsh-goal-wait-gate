@@ -15,12 +15,12 @@ export const inject = ['agents', 'goals', 'sessions', 'jobs']
 export async function apply(ctx: Context, config: StartupConfig = {}): Promise<void> {
   const resolved = resolveStartupConfig(config)
   assertRootRealm(ctx)
-  await assertHostVersion(ctx)
+  const profile = await assertHostVersion(ctx)
   const native = await importModule()
   assertRootRealm(ctx)
   assertNoOwner(ctx, native.apply)
   if (ctx.agents.list().length) throw new Error('Startup requires an empty agent registry')
-  const state = claimLifetime(ctx, resolved.strategy)
+  const state = claimLifetime(ctx, resolved.strategy, { distribution: profile.distribution, cordis: profile.cordis, driverSha256: profile.driverSha256 })
   const agents = ctx.agents
   const goals = ctx.goals
   const gate = resolved.strategy === 'activation' ? new GoalWaitGate(ctx, resolved) : undefined
@@ -71,7 +71,7 @@ export async function apply(ctx: Context, config: StartupConfig = {}): Promise<v
         await ownership.mount({
           name: resolved.strategy === 'replacement' ? 'goal-wait-owned-replacement-driver' : 'goal-wait-owned-native-compatible-driver',
           apply(driverCtx: Context) {
-            driver = installNativeDriver(driverCtx, resolved.strategy === 'replacement' ? createBackgroundPolicy(driverCtx, resolved) : undefined)
+            driver = installNativeDriver(driverCtx, resolved.strategy === 'replacement' ? createBackgroundPolicy(driverCtx, resolved) : undefined, profile.driver)
           },
         }, fiber => { child = fiber })
       }

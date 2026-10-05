@@ -1,5 +1,6 @@
-// Derived from @deepseek-ai/dsh-goal-round-driver 0.2.0-rc.2 (published bundle).
-// Copyright (c) 2026 DeepSeek. MIT; see UPSTREAM-LICENSE.txt and provenance.json.
+// Derived from the published @deepseek-ai/dsh-goal-round-driver bundles
+// 0.2.0-rc.2 and 0.2.1-alpha.1. Copyright (c) 2026 DeepSeek. MIT; see
+// UPSTREAM-LICENSE.txt and provenance.json.
 import { isDeepStrictEqual } from 'node:util';
 import type { Context } from '@deepseek-ai/cordis';
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent';
@@ -18,6 +19,14 @@ export const name = "background-aware-goal-driver";
 export interface DriverPolicy {
 	allows(agent: Agent): boolean;
 	subscribe(wake: (agent: Agent) => void): () => void;
+}
+/**
+* Published-bundle behaviors this port has to reproduce.
+* Selected only from the detected host artifact identity, never from configuration.
+*/
+export interface DriverBehavior {
+	/** 0.2.1-alpha.1 settles an unclaimed queued round by removing its inbox message. */
+	readonly removeCancelledQueuedMessage: boolean;
 }
 
 interface Attempt extends Pick<GoalMessageSource, 'goalId' | 'revision' | 'round'> {
@@ -61,7 +70,7 @@ function renderThrown(value: unknown): string {
 	return value instanceof Error ? value.message : String(value);
 }
 /** Install automatic same-session continuation and its race fences. */
-export function installNativeDriver(ctx: Context, policy?: DriverPolicy): { stop(): Promise<void> } {
+export function installNativeDriver(ctx: Context, policy: DriverPolicy | undefined, behavior: DriverBehavior): { stop(): Promise<void> } {
 	const states = new Map<Agent, DriverState>();
 	let stopping = false;
 	let stopPromise: Promise<void> | undefined;
@@ -287,12 +296,15 @@ export function installNativeDriver(ctx: Context, policy?: DriverPolicy): { stop
 				state.competingQueued = false;
 				const attempt = state.attempt;
 				const goal = currentGoal(state);
-				if (attempt !== void 0 && (attempt.phase === "queued" || attempt.phase === "claimed" || attempt.cancelled) && goal !== void 0 && goal.phase === "active" && goal.activation === "armed" && attempt.goalId === goal.id && attempt.revision === goal.revision) {
+				const pause = attempt !== void 0 && (attempt.phase === "queued" || attempt.phase === "claimed" || attempt.cancelled) && goal !== void 0 && goal.phase === "active" && goal.activation === "armed" && attempt.goalId === goal.id && attempt.revision === goal.revision;
+				const retire = behavior.removeCancelledQueuedMessage && attempt !== void 0 && attempt.phase === "queued";
+				if (pause || retire) {
 					state.attempt = void 0;
 					try {
-						ctx.goals.pause(agent, goalRef(goal));
+						if (retire && attempt !== void 0) agent.inbox.remove(attempt.messageId);
+						if (pause && goal !== void 0) ctx.goals.pause(agent, goalRef(goal));
 					} catch (error) {
-						ctx.logger.warn(`goal-round-driver: could not pause cancelled goal for agent "${agent.id}": ${renderThrown(error)}`);
+						ctx.logger.warn(`goal-round-driver: could not settle cancelled goal round for agent "${agent.id}": ${renderThrown(error)}`);
 						disarm(state);
 					}
 				}

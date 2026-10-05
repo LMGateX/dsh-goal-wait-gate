@@ -14,8 +14,16 @@ export function assertRootRealm(ctx: Context): void {
   }
 }
 
+/** Detected published host, recorded for diagnostics only; it grants no authority. */
+export interface StartupHost {
+  readonly distribution: string
+  readonly cordis: string
+  readonly driverSha256: string
+}
 export interface StartupState {
   readonly strategy: string
+  /** Exact host artifact identity this managed driver was ported and pinned against. */
+  readonly host: StartupHost
   /** Describes the explicit driver boundary, not arbitrary Cordis effect verification. */
   readonly cleanupIntegrity: 'unverified-native' | 'managed-stop'
   status: 'starting' | 'active' | 'closing' | 'closed' | 'closed-unverified' | 'failed'
@@ -35,10 +43,10 @@ const leases = globalStore[leaseKey] ??= new WeakMap<object, Lease>()
 export function getStartupState(ctx: Context): Readonly<StartupState> | undefined {
   return leases.get(ctx.root[Context.isolate])?.state
 }
-export function claimLifetime(ctx: Context, strategy: string): StartupState {
+export function claimLifetime(ctx: Context, strategy: string, host: StartupHost): StartupState {
   const rootIdentity = ctx.root[Context.isolate]
   if (leases.has(rootIdentity)) throw new Error('Startup root lifetime owner cannot remount')
-  const state: StartupState = { strategy, status: 'starting', cleanupIntegrity: strategy === 'native' ? 'unverified-native' : 'managed-stop' }
+  const state: StartupState = { strategy, host, status: 'starting', cleanupIntegrity: strategy === 'native' ? 'unverified-native' : 'managed-stop' }
   leases.set(rootIdentity, { owner: ctx.fiber, state })
   return state
 }

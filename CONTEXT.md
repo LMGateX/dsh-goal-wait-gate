@@ -39,3 +39,9 @@ _Avoid_: Hot handoff
 
 **Cleanup integrity**: What the lifecycle owner can establish about shutdown, distinct from a disposal call merely returning.
 _Avoid_: Verified clean shutdown
+
+**Host profile**: The exact published DSH artifact identity a managed component is ported and pinned against — distribution package versions together with the native driver bundle fingerprint. Support is per profile, not a version range, and an unpinned distribution is refused rather than approximated.
+_Avoid_: Supported version, minimum version
+
+**Ported behavior**: The native semantics the pinned bundle of a host profile actually has, selected from that artifact identity. It is never inferred from a version string or supplied by configuration.
+_Avoid_: Version feature flag

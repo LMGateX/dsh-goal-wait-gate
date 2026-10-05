@@ -49,15 +49,18 @@ Normal replacement waiting keeps the parent genuinely idle, the durable goal act
 
 Epoch records are created only on observed start. A pre-start abort creates no phantom debt; failed first acceptance closes its observed epoch without inventing an undelivered notice. Continuable end establishes the native notice **attempt**, not guaranteed transport delivery or model consumption; one-shot end establishes only result settlement, while its standard disposal-backed Job remains guarded until later settlement/dispatch. Registered descendants and Jobs remain independent guards because one-shot and continuable end have different semantics.
 
-## Exact baseline and invariants
+## Pinned hosts and invariants
 
-DSH 0.2.0-rc.2; Cordis 4.0.4. Native goal driver SHA-256:
+Support is per published artifact identity, not a version range. The host profile is matched from the resolved driver bundle version **and** its SHA-256 together; an unpinned distribution is refused before any driver is mounted, and the ported behavior is selected only from that identity — never from configuration.
 
-~~~text
-3bca01a2e87de1683fa8b55ad54688eefc4e366c971c20e9afd654db3b5ab450
-~~~
+| Host distribution | Cordis | Goal-round-driver SHA-256 | Ported queued-round behavior |
+|---|---|---|---|
+| 0.2.0-rc.2 | 4.0.4 | 3bca01a2…db3b5ab450 | A cancelled or stale queued round retires through the activatable pause only; a kept queued message stays parked in the inbox. |
+| 0.2.1-alpha.1 | 4.0.5-alpha.1 | 68ed0920…74317c69cf8 | An unclaimed queued round is also settled at idle by removing its inbox message, independent of the round pause. |
 
-The full upstream MIT notice and provenance are distributed with lib/driver. No master-only queued-reservation behavior was silently adopted. The TypeScript port preserves native renderer/source/reservation, serial drive, checkpoints, admission-only roundsStarted counting, goal/ref/source authority, stale fences, cap, error and cancellation semantics. Tests distinguish ordinary notices from admitted goal rounds. Native user/parent cancellation may pause a goal; normal work waiting does not.
+That single published difference is profile data, and the behavior-selection tests fail if either pin or its flag is changed. 0.2.1-alpha.1 no longer publishes the `./invariant` companion subpath, and an installation of that host may not ship `@deepseek-ai/dsh-invariants`; the companion is detected beside the resolved driver and is optional on both pins. The `native` strategy always mounts the actual published callback of the running host, so it inherits that host's own behavior without this port.
+
+The full upstream MIT notice and both provenance records are distributed with lib/driver. No master-only queued-reservation behavior was silently adopted. The TypeScript port preserves native renderer/source/reservation, serial drive, checkpoints, admission-only roundsStarted counting, goal/ref/source authority, stale fences, cap, error and cancellation semantics. Tests distinguish ordinary notices from admitted goal rounds. Native user/parent cancellation may pause a goal; normal work waiting does not.
 
 Policy checks run **after original housekeeping/checkpoint/attempt retirement/cap**, before reservation and on both sides of downstream pre-step. The cap still blocks the last admitted round even with newly started work. Max-token/error/checkpoint failure/external disarm/cancel retain their native exceptions to active/armed waiting.
 
@@ -67,7 +70,7 @@ Preflight rejects an existing recognized owner without disposing it. A one-use e
 
 This is a **cooperating recognized-owner guard**, not arbitrary renamed/wrapped/hostile scheduler enforcement or a global/distributed lease. Core realm checking is a startup snapshot: a fixed shared topology and supported providers from the same module graph are prerequisites. Later isolated core realms, provider replacement, service changes, bootstrap after existing runs and separate active module copies are unsupported. There is no public outstanding-epoch bootstrap snapshot.
 
-Version checking reads fresh locally resolvable package metadata from the plugin location and verifies the original source fingerprint. It does **not** attest the actual active provider graph. All core agent/loop/goal/session/projection/LLM/prompt/tools/goal-tools/jobs/jobs-local/jobs-tools/invariants/scope/driver artifacts must be resolvable at the pinned version, even if a given tool was not mounted. Existing subagents additionally require the bundled subagent/in-process/spawn/fork/tool/persistence/JSONL family; existing sessionQuery additionally requires query/query-sqlite. Custom/late providers are not authenticated by these checks.
+Version checking reads fresh locally resolvable package metadata from the plugin location and verifies the original source fingerprint. It does **not** attest the actual active provider graph. All core agent/loop/goal/session/projection/LLM/prompt/tools/goal-tools/jobs/jobs-local/jobs-tools/scope/driver artifacts must be resolvable at the pinned version, even if a given tool was not mounted; the invariants companion is required only when that installation publishes it beside the resolved driver. Existing subagents additionally require the bundled subagent/in-process/spawn/fork/tool/persistence/JSONL family; existing sessionQuery additionally requires query/query-sqlite. Custom/late providers are not authenticated by these checks.
 
 ## Admission, cleanup and release limitations
 
@@ -83,7 +86,7 @@ The native fixture runs actual published SDK plugins and native invariants again
 
 Public native assertions cover idle creation/stopping, quiet/wakeup ordering, genuine detach/disposal/end, failed acceptance, repeated cold-resumed epochs/stale notice/end, nested idle residency, independent durable lineage, one-shot disposal-backed Jobs with generic Jobs disabled, revision edit, exact completion authority, pre-step reservation fences, native cap/errors/checkpoint, user/parent queued/claimed/admitted cancellation, external pause/keepInbox/manual retention, downstream throw/reject, managed drain failure and the final request counterexample. Ownership tests separately cover actual mount/update/intrusion/lifetime/version/publication/disposal paths. This is not proof of all unknown providers, prepublication, mixed claimed multi-input permutations or final atomic admission.
 
-The legacy host matrix typechecks **only the unchanged root entry, gate and legacy tests** on 0.1.7-alpha.2, 0.1.7-rc.2 and 0.2.0-rc.2. Startup/native assertions apply only to pinned rc.2. Package export/build/attribution checks are separate from dependency clean-install reproducibility. The updated lock has registry integrity records and no private file/link resolutions; clean frozen-lock installation and native dependency-build policy are not accepted here. Do not release/install this development branch as a finished package. Direct build/test/package audits do not substitute for that release check.
+The legacy host matrix typechecks **only the unchanged root entry, gate and legacy tests** on 0.1.7-alpha.2, 0.1.7-rc.2 and 0.2.0-rc.2. The native suite runs against a pinned host, and the same 86 assertions pass on both pins: on the installed 0.2.0-rc.2 and on a read-only 0.2.1-alpha.1 installation, with the sources and tests copied beside symlinked host packages and nothing installed or written into that installation. `node scripts/check-startup-host.ts <directory containing @deepseek-ai/*>` typechecks the shipped src/ against a host that already exists on the machine and reports whether its identity is pinned. Package export/build/attribution checks are separate from dependency clean-install reproducibility. The updated lock has registry integrity records and no private file/link resolutions; clean frozen-lock installation and native dependency-build policy are not accepted here. Do not release/install this development branch as a finished package. Direct build/test/package audits do not substitute for that release check.
 
 ### Operational isolation correction
 

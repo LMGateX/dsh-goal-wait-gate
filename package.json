@@ -29,10 +29,11 @@
     "test": "node --test \"test/**/*.test.ts\"",
     "prepack": "pnpm build",
     "check:hosts": "node scripts/check-host-compat.mjs",
+    "check:startup-host": "node scripts/check-startup-host.ts",
     "check:patch": "node scripts/check-profile-patch.mjs",
     "check": "pnpm typecheck && pnpm test && pnpm check:hosts && pnpm check:patch",
     "test:legacy": "node --test test/plugin.test.ts",
-    "test:native": "node --test test/startup.test.ts test/ownership.test.ts"
+    "test:native": "node --test test/startup.test.ts test/ownership.test.ts test/host-profile.test.ts"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.4",

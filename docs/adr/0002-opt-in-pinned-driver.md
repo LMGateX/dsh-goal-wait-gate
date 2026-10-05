@@ -18,6 +18,10 @@ Native-derived driver 以已发布的 DSH 0.2.0-rc.2 为基线，而不是 maste
 
 每个 root 生命周期只可领取一个 owner。公开 registry/known callback/label guard 会拒绝已知竞争者，不卸载他人 owner；root tombstone、更新 veto 和清理 Promise 保留，避免 registry 消失被误当成可热切换。它不是安全、分布式或任意第三方 scheduler 的全局租约。
 
+## 追加：host pin 是 artifact identity 集合，不是版本范围
+
+对 0.2.1-alpha.1 的支持以新增一个精确 pin 的方式实现，而不是放宽版本判断：native-derived driver 的行为由解析到的 bundle 版本与 SHA-256 **同时**匹配决定，未 pin 的发行版（包括更新的 alpha）会在挂载任何 driver 之前被拒绝。当前 pin 为 0.2.0-rc.2 与 0.2.1-alpha.1；两者唯一的已发布差异（unclaimed queued round 是否在 idle 时移除 inbox message）是 profile 数据，并由行为测试双向锁定。0.2.1-alpha.1 不再发布 `./invariant` companion subpath，该安装中的 invariants 包因此是可选的，只在紧邻已解析 driver 处存在时才检查。此扩展不引入 master-only 行为，也不改变 legacy 默认。
+
 ## 必须保留的边界
 
 - 仅直接 root API bootstrap；ordinary Loader/profile/bundle row 不满足父 Fiber 限制。尚未提供宿主 launcher adapter 或 GUI。

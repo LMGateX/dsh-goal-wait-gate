@@ -1,5 +1,5 @@
 /** Real native public interfaces; only model replies and producer completion are controlled. */
-import { Context, type Fiber } from '@deepseek-ai/cordis'
+import { Context, type Fiber, type Plugin } from '@deepseek-ai/cordis'
 import Sessions, { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import Projections from '@deepseek-ai/dsh-session-projection'
 import Agents, { type Agent, type AgentHandle, type CreateAgentOptions, type ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
@@ -9,19 +9,32 @@ import Tools from '@deepseek-ai/dsh-tools'
 import Loop from '@deepseek-ai/dsh-agent-loop'
 import Goals from '@deepseek-ai/dsh-goal'
 import Jobs from '@deepseek-ai/dsh-jobs-local'
-import Invariants from '@deepseek-ai/dsh-invariants'
 import * as ToolJobs from '@deepseek-ai/dsh-tool-jobs'
 import * as ToolGoal from '@deepseek-ai/dsh-tool-goal'
-import * as GoalInvariant from '@deepseek-ai/dsh-goal-round-driver/invariant'
 import Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import Subagents from '@deepseek-ai/dsh-subagent'
 import Query from '@deepseek-ai/dsh-session-query-sqlite'
 import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
+import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { goalWaitStartup, type StartupConfig } from '../src/startup.ts'
+
+/**
+ * Native invariant companions are published beside the driver by the pinned
+ * rc.2 host family and were folded away by later hosts. Mount exactly what the
+ * installation under test ships, so the same fixture runs on both pins.
+ */
+async function hostInvariantPlugins(): Promise<Plugin<void>[]> {
+  const driver = dirname(fileURLToPath(import.meta.resolve('@deepseek-ai/dsh-goal-round-driver/package.json')))
+  const plugins: Plugin<void>[] = []
+  if (existsSync(join(driver, '..', 'dsh-invariants', 'package.json'))) plugins.push((await import('@deepseek-ai/dsh-invariants')).default as Plugin<void>)
+  if (existsSync(join(driver, 'lib', 'invariant.js'))) plugins.push(await import('@deepseek-ai/dsh-goal-round-driver/invariant') as Plugin<void>)
+  return plugins
+}
 
 export interface Call { agent: Agent; index: number; signal: AbortSignal | undefined }
 export interface Answer { finish?: 'stop' | 'max-tokens'; error?: boolean; tool?: {name: string; args?: Record<string, unknown>} }
@@ -63,7 +76,6 @@ export class NativeFixture {
     await ctx.plugin(Loop)
     await ctx.plugin(Goals)
     await ctx.plugin(Jobs)
-    await ctx.plugin(Invariants)
     if (this.options.children) {
       this.scratch = await mkdtemp(join(tmpdir(), 'goal-driver-synthetic-'))
       await ctx.plugin(Persistence, {root: join(this.scratch, 'sessions'), compression: 'none'})
@@ -74,7 +86,7 @@ export class NativeFixture {
     }
     await ctx.plugin(ToolJobs, {completionDelivery: this.options.completionDelivery})
     await ctx.plugin(ToolGoal)
-    await ctx.plugin(GoalInvariant)
+    for (const hostPlugin of await hostInvariantPlugins()) await ctx.plugin(hostPlugin)
     const fixture = this
     class Adapter extends LlmAdapter {
       override async *stream(options: GenerateOptions): AsyncGenerator<StreamChunk> {
