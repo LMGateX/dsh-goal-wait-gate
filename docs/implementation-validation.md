@@ -18,6 +18,7 @@ TypeScript startup owner, native-derived driver ported against two pinned publis
 | Startup host type gate (0.2.1-alpha.1) | PASS | Shipped src/ typechecked against that installation's declarations through the same read-only links |
 | Legacy type matrix | 3 hosts PASS | Current legacy entry/gate/tests copied into isolated projects; existing per-host declarations reused read-only for 0.1.7-alpha.2, 0.1.7-rc.2, 0.2.0-rc.2 |
 | Host pin selection and refusal | PASS | 0.2.0-rc.2 and 0.2.1-alpha.1 accepted by version + bundle SHA-256; unpinned version, wrong fingerprint and mixed first-party version all refused before mounting |
+| Consumer tarball install | PASS | 0.2.1 tarball installed into an independent temporary directory with npm --ignore-scripts; no profile, DSH installation or shared server touched |
 | Compiled root/startup package imports | PASS | Distinct exports and unchanged legacy name/default; prerelease peer range smoke |
 | Package dry-run | PASS, 28 files | npm pack ignore-scripts; both declarations, source modules, upstream MIT notice/provenance and support document included |
 | Privacy/whitespace scan | PASS | New source/tests/docs contain no captured private paths, addresses, sessions or credentials; no runtime dump committed |
@@ -40,4 +41,8 @@ Original P1: one-shot end is result settlement, not disposal. Standard subagent 
 
 The attempted pnpm 11 build unexpectedly ran dependency synchronization, followed by an ignored native build failure. It temporarily rewrote 25 SDK leaf links through a shared parent-directory symlink. All 25 were restored to the verified original distribution; the exact original native source fingerprint is unchanged. The main linked plugin working tree and profile configuration remained untouched; no GUI/server/session restart or plugin deployment occurred. This incident is not represented as zero transient impact on other running sessions.
 
-The implementation now owns its dependency-group directory and subsequent verification runs directly, without pnpm implicit synchronization. The generated lock contains registry integrities and no private file/link resolution; incidental build-approval placeholder was removed, not approved. Future dependency installation must use a genuinely independent directory and separately verify frozen-lock and native-build policy before release/install. The default linked plugin has not been replaced by this feature branch.
+The implementation now owns its dependency-group directory; subsequent verification runs directly, without pnpm implicit synchronization. The generated lock contains registry integrities and no private file/link resolution; the incidental build-approval placeholder was removed, not approved.
+
+## 0.2.1 release status
+
+`v0.2.1` is a GitHub source release: the release commit is on master, tagged, and documented here. Registry publication is a separate maintainer step and has not been performed, so `npm install dsh-goal-wait-gate` does not resolve. The released package declares no runtime dependencies (peer dependencies only, mostly optional), so a consumer install does not resolve an ambient dependency graph; the development workflow's clean frozen-lock installation and native dependency-build policy remain unverified and are not implied by this release. The default linked plugin checkout was not modified, rebuilt or replaced by the release.

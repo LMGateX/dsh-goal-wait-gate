@@ -103,7 +103,7 @@ Related evidence and ADR:
 
 ```text
 DSH version / upstream commit or package evidence: 0.2.1-alpha.1 发布包（dist-tag alpha）；以包内 bundle、类型目录与 README 为准
-Plugin version / commit: 0.2.0 功能分支（本次 pin 提交）
+Plugin version / commit: 0.2.1（本次 pin 提交）
 Changes in scheduling seam: 无。goal-round-driver/lib/index.js 相对 rc.2 只有一处 idle 结算差异；agent-loop、agent、jobs、jobs-local、tool-jobs、tool-goal、command-goal 与 goal 的执行 bundle 逐字节相同。新增包只有 dsh-tool-schedule 与 dsh-experimental-inspector*，与 goal 调度无关。
 Changes in phase / activation / revision / ownership: 无（goal 执行 bundle 未变化）。
 Changes in edit and completion authority: 无（tool-goal、command-goal bundle 未变化）。

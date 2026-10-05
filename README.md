@@ -4,17 +4,17 @@ A DeepSeek Harness (DSH) plugin that **withholds automatic goal continuation whi
 
 **The legacy root entry** is a bridge, not a fork: the official goal packages stay exactly as they are. The plugin reads public services and toggles only the goal's process-local continuation activation, which is the input the official `dsh-goal-round-driver` reads at every idle.
 
-## Opt-in startup implementation (development branch)
+## Opt-in startup owner (0.2.1 preview)
 
-A separate TypeScript `dsh-goal-wait-gate/startup` export implements mutually exclusive activation (default), replacement, native and off startup strategies. It does **not** change the root export/default or deploy anything. [Support contract and delivery status](<docs/startup-driver.md>) and [opt-in decision](<docs/adr/0002-opt-in-pinned-driver.md>) describe the exact rc.2 baseline, direct-root-only bootstrap, work/cleanup limits and explicit late-admission counterexample. It is **not an ordinary profile/Loader row or GUI integration**, and no hot switching is supported.
+A separate TypeScript `dsh-goal-wait-gate/startup` export implements mutually exclusive activation (default), replacement, native and off startup strategies, ported against the exact published goal-round drivers of DSH `0.2.0-rc.2` and `0.2.1-alpha.1`. It does **not** change the root export or the default strategy. [Support contract and delivery status](<docs/startup-driver.md>) and [opt-in decision](<docs/adr/0002-opt-in-pinned-driver.md>) describe the pin table, direct-root-only bootstrap, work/cleanup limits and the explicit late-admission counterexample. It is **not an ordinary profile/Loader row or GUI integration**, and no hot switching is supported.
 
-The new development dependency lock graph was generated, but clean frozen-lock installation and native dependency-build policy still need independent verification. Treat this branch as unreleased; do not infer package reproducibility from the linked-dependency local test/build results. The installation/configuration sections below refer **only to the legacy bridge**.
+0.2.1 is a GitHub source release (tag `v0.2.1`); it is not published to npm, so install it from the checkout or a release tarball. The package declares no runtime dependencies (peer dependencies only, mostly optional), so a consumer install does not resolve an ambient dependency graph. The development lock graph was regenerated incidentally during implementation, so clean frozen-lock installation and native dependency-build policy for repository development remain unverified. The installation/configuration sections below refer **only to the legacy bridge**.
 
 ## The problem
 
 The official driver injects a `<goal_round>` prompt whenever an agent is idle and its goal is active and armed. Idle only means "no turn is currently running", so an agent that deliberately ended its turn to wait for a background job or a background subagent is indistinguishable from one with nothing left to do. Every waiting gap becomes another goal round: the round budget is consumed, the whole session is re-prefilled, and models start reading the round count as elapsed time — sometimes interrupting healthy long-running subagents.
 
-This is a known, still-unfixed upstream behavior through DSH `0.1.7-rc.1` (discussions [#4664](https://github.com/deepseek-ai/deepseek-harness/discussions/4664), [#4715](https://github.com/deepseek-ai/deepseek-harness/discussions/4715), [#1421](https://github.com/deepseek-ai/deepseek-harness/discussions/1421)).
+This is a known, still-unfixed upstream behavior through DSH `0.2.1-alpha.1` (discussions [#4664](https://github.com/deepseek-ai/deepseek-harness/discussions/4664), [#4715](https://github.com/deepseek-ai/deepseek-harness/discussions/4715), [#1421](https://github.com/deepseek-ai/deepseek-harness/discussions/1421)).
 
 ## What the gate does
 
