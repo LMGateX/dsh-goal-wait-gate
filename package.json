@@ -1,6 +1,6 @@
 {
   "name": "dsh-goal-wait-gate",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "DSH plugin that withholds automatic goal continuation while the owning agent still has live background work",
   "type": "module",
   "license": "MIT",
@@ -40,7 +40,8 @@
     "check:hosts": "node scripts/check-host-compat.mjs",
     "check:startup-host": "node scripts/check-startup-host.ts",
     "check:bundle": "node scripts/check-bundle-layer.mjs",
-    "check": "pnpm typecheck && pnpm test && pnpm check:hosts && pnpm check:bundle",
+    "check:settings": "node scripts/check-settings-form.mjs",
+    "check": "pnpm typecheck && pnpm test && pnpm check:hosts && pnpm check:bundle && pnpm check:settings",
     "test:legacy": "node --test test/plugin.test.ts",
     "test:native": "node --test test/startup.test.ts test/ownership.test.ts test/host-profile.test.ts test/bundle-manifest.test.ts"
   },
