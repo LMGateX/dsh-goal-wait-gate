@@ -1,18 +1,20 @@
 /**
- * dsh-goal-wait-gate: withhold automatic goal continuation while the owning
- * agent still has live background work.
+ * dsh-goal-wait-gate: one row owns goal continuation.
  *
- * The plugin never touches the official goal packages. It toggles only the
- * process-local continuation activation of the agent's current goal, which is
- * the input the official goal-round driver reads at every idle.
+ * The shipped bundle layer disables the host's own `goal-round-driver` row, so
+ * this plugin is the thing that mounts a driver, in every strategy except
+ * `off`. The strategy and the background policy are the row configuration the
+ * Plugins page renders from {@link RowConfigSchema}; a saved change remounts
+ * this row, which switches the driver in place.
+ *
+ * @see ./config.ts for the schema, and ./mode.ts for the strategies.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-goal'
 import type {} from '@deepseek-ai/dsh-jobs'
-import type { Config } from './config.ts'
-import { resolveConfig } from './config.ts'
-import { GoalWaitGate } from './gate.ts'
+import { Config, resolveRowConfig, type RowConfig } from './config.ts'
+import { applyStrategy } from './mode.ts'
 
 /** Registered plugin name. */
 export const name = 'goal-wait-gate'
@@ -20,49 +22,20 @@ export const name = 'goal-wait-gate'
 /** Services this plugin cannot work without. */
 export const inject = ['agents', 'goals']
 
-export type { Config } from './config.ts'
+/** The Schemastery schema DSH renders on the plugin card. */
+export { Config } from './config.ts'
+
+export type { RowConfig } from './config.ts'
 
 /**
- * Mount the gate.
+ * Mount the configured continuation strategy.
  *
  * @param ctx - the plugin context carrying the agent registry and goal service.
- * @param config - gate policy; defaults hold on every available signal.
+ * @param config - row configuration; defaults live in the schema.
  */
-export function apply(ctx: Context, config: Config = {}): void {
-  const resolved = resolveConfig(config)
-  const gate = new GoalWaitGate(ctx, resolved)
-  ctx.logger.info(
-    `goal-wait-gate: mounted (waitForJobs=${resolved.waitForJobs}, waitForSubagents=${resolved.waitForSubagents}, maxHoldMs=${resolved.maxHoldMs})`,
-  )
-
-  // Primary checkpoint: the turn loop awaits this before the agent turns idle,
-  // so the goal is already gated when the official driver's idle check runs.
-  ctx.on('agent/turn-stopping', ({ agent }) => {
-    gate.evaluate(agent)
-  })
-
-  // Safety net for turn shapes that end without turn-stopping.
-  ctx.on('agent/status', ({ agent, status }) => {
-    if (status !== 'idle') return
-    gate.evaluate(agent)
-  }, { prepend: true })
-
-  // A goal created, edited, or resumed while live work is already pending must
-  // not start an empty round: the official driver turns `goal/changed` into a
-  // drive request, so this listener runs before its own.
-  ctx.on('goal/changed', ({ agent }) => {
-    gate.evaluate(agent)
-  }, { prepend: true })
-
-  // A disposed agent's session may be resumed later as a fresh agent; the old
-  // bookkeeping must not leak into it.
-  ctx.on('agent/disposed', ({ agent }) => {
-    gate.forget(agent)
-  })
-
-  // Unloading the gate restores official behavior: re-arm the goals it holds.
-  ctx.effect(() => () => gate.dispose(), 'goal-wait-gate teardown')
+export async function apply(ctx: Context, config: RowConfig = {}): Promise<void> {
+  await applyStrategy(ctx, resolveRowConfig(config))
 }
 
 /** Mountable plugin value, also usable from tests and manual compositions. */
-export const goalWaitGate = { name, inject, apply }
+export const goalWaitGate = { name, inject, apply, Config }

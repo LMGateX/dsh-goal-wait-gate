@@ -37,7 +37,10 @@ test('the bundle patch is one insert mounting the registered plugin name', () =>
   assert.deepEqual(ids, [pluginName], 'the row id is the name the plugin registers')
   assert.match(patch, new RegExp('^ {6}name: ' + manifest.name + '$', 'm'))
   assert.doesNotMatch(patch, /^\s*config:/m, 'defaults stay in the plugin, not in the mount declaration')
-  assert.doesNotMatch(patch, /^\s*disabled:/m)
+  // The layer hands this plugin the only driver slot: DSH's own row is disabled
+  // in the same file, so both entries ship and disappear together.
+  assert.match(patch, /^- id: goal-round-driver\n  disabled: true$/m, 'the host goal-round-driver row is not disabled')
+  assert.equal((patch.match(/^- id: /gm) ?? []).length, 1, 'more than the one host row is disabled from this layer')
 })
 
 test('both locale dictionaries carry card text under a valid language id', () => {

@@ -113,7 +113,11 @@ console.log('composed   ' + NAME + ' as a bundle of profile ' + PROFILE + (legac
 const row = /^- id: goal-wait-gate\n  name: dsh-goal-wait-gate$/m
 check(row.test(dump), 'the composed tree lacks the bundle row for goal-wait-gate')
 check((dump.match(/^- id: goal-wait-gate$/gm) ?? []).length === 1, 'the bundle row is composed more than once')
-check(/^- id: goal-round-driver\n  name: '@deepseek-ai\/dsh-goal-round-driver'$/m.test(dump), 'the official goal-round-driver is not mounted beside the gate')
+// This plugin owns the continuation slot: the same layer that mounts it
+// disables the host's own driver row, so no two drivers can race.
+check(/^# == .*patched by dsh-goal-wait-gate\n- id: goal-round-driver\n  name: '@deepseek-ai\/dsh-goal-round-driver'\n  disabled: true$/m.test(dump), 'the bundle layer does not disable the host goal-round-driver row')
+check((dump.match(/^- id: goal-round-driver$/gm) ?? []).length === 1, 'the host goal-round-driver row is composed more than once')
+check(!/^- id: goal-round-driver\n  name: '[^\n]*'\n(?!  disabled: true)/m.test(dump), 'the host goal-round-driver row is still enabled beside this plugin')
 check(/- id: goal-wait-gate\n  name: dsh-goal-wait-gate\n  config:\n    maxHoldMs: 45000$/m.test(dumpOverride), 'a profile-layer override no longer reaches the bundle row')
 
 // The host readers behind the Plugins page: readProfilePlugins for the bundle
@@ -149,11 +153,23 @@ check(patchFiles.some(file => realpathSync(file) === realpathSync(join(ROOT, 'co
 const rows = appBoot.composeEntries([appBoot.loadOverlayPatches('dsh', patchFiles[0]).filter(item => item.insert !== undefined)]).flat(Infinity)
 check(rows.some(item => item?.id === 'goal-wait-gate' && item?.name === NAME), 'the shipped patch declares no goal-wait-gate row')
 
+// The configuration page renders only rows whose module publishes a native
+// Schemastery node; its strategy union is the choice list on the card.
+const entry = await import(pathToFileURL(join(ROOT, 'src', 'index.ts')).href)
+check(appBoot.isNativeConfigSchema(entry.Config), 'the package entry exports no native Schemastery Config, so no form would render')
+const schema = entry.Config.toJSON()
+const envelope = schema.refs[String(schema.uid)]
+const strategyNode = schema.refs[envelope.dict.strategy]
+const choices = (strategyNode.list ?? []).map(id => schema.refs[id].value)
+check(JSON.stringify(choices) === JSON.stringify(['activation', 'replacement', 'native', 'off']), 'the strategy union is not the four documented choices: ' + JSON.stringify(choices))
+check(strategyNode.meta?.default === 'activation', 'the strategy union does not default to activation')
+check(Object.keys(envelope.dict ?? {}).length === 4, 'the row schema exposes an unexpected field set: ' + Object.keys(envelope.dict ?? {}).join(', '))
+
 if (failures.length > 0) {
   console.error('FAILED (' + failures.length + '): the package does not compose as a profile bundle')
   process.exit(1)
 }
-console.log('OK: the bundle layer composes once, the official driver stays mounted, overrides still win,')
+console.log('OK: the bundle layer composes once, disables the host driver, overrides still win,')
 console.log('    and readProfilePlugins/readPluginMeta/the preflight read it as a manageable bundle')
 console.log('    dumps: ' + DUMP + ', ' + DUMP_OVERRIDE + ' (isolated home: ' + ISOLATED_HOME + ')')
 

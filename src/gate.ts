@@ -9,13 +9,13 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { GoalRef, GoalView } from '@deepseek-ai/dsh-goal'
-import type { ResolvedConfig } from './config.ts'
+import type { ResolvedGateConfig } from './config.ts'
 import { hasLiveJobs, hasLiveSubagents } from './live-work.ts'
 
 /** Gate one live agent's goal continuation. */
 export class GoalWaitGate {
   readonly #ctx: Context
-  readonly #config: ResolvedConfig
+  readonly #config: ResolvedGateConfig
   /** Goal ids this gate disarmed and still owns, per exact live agent. */
   readonly #heldGoals = new Map<Agent, string>()
   /** Goal ids this gate conceded to an explicit human re-arm, per exact live agent. */
@@ -23,7 +23,7 @@ export class GoalWaitGate {
   readonly #expiryTimers = new Map<Agent, ReturnType<typeof setTimeout>>()
   #stopping = false
 
-  constructor(ctx: Context, config: ResolvedConfig) {
+  constructor(ctx: Context, config: ResolvedGateConfig) {
     this.#ctx = ctx
     this.#config = config
   }
@@ -86,8 +86,11 @@ export class GoalWaitGate {
     this.#yieldedGoals.clear()
   }
 
-  /** Whether any configured signal reports live owned work. */
+  /** Whether continuation must be withheld for this agent right now. */
   #hasLiveWork(agent: Agent): boolean {
+    // The `off` strategy withholds unconditionally: no driver is mounted, so
+    // holding every goal is what makes "no automatic continuation" true.
+    if (this.#config.alwaysHold === true) return true
     if (this.#config.waitForJobs && hasLiveJobs(this.#ctx, agent)) return true
     if (this.#config.waitForSubagents && hasLiveSubagents(this.#ctx, agent)) return true
     return false

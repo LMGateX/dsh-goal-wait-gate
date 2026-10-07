@@ -8,15 +8,21 @@
 #   dsh plugin --profile web add dsh-goal-wait-gate
 #
 # The row id stays goal-wait-gate, so an existing profile override keeps
-# applying. Policy defaults live in the plugin (waitForJobs=true,
-# waitForSubagents=true, maxHoldMs=0); override them in the profile layer:
+# applying. Defaults live in the plugin's Schemastery config (strategy
+# "activation", waitForJobs=true, waitForSubagents=true, maxHoldMs=0), and the
+# Plugins page writes an override into the profile layer, never here:
 #
 #   - id: goal-wait-gate
 #     config:
-#       waitForJobs: false
+#       strategy: native
 #
-# Do not also insert this row by hand in the profile patch: two entries with
-# the same id mount the gate twice.
+# This layer also disables the host's own goal-round-driver row, because this
+# plugin is the thing that mounts a driver now and two drivers would race. Both
+# entries ship and disappear together, so uninstalling the plugin restores the
+# host row — official behaviour — and choosing "native" does the same without
+# uninstalling. Do not insert a second goal-wait-gate row by hand.
 - insert:
     - id: goal-wait-gate
       name: dsh-goal-wait-gate
+- id: goal-round-driver
+  disabled: true

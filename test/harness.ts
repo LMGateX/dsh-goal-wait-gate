@@ -9,7 +9,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { GoalActivationChanged, GoalChanged } from '@deepseek-ai/dsh-goal'
 import type { JobView } from '@deepseek-ai/dsh-jobs'
-import { goalWaitGate, type Config } from '../src/index.ts'
+import { goalWaitGate, type RowConfig } from '../src/index.ts'
 
 export type Activation = 'armed' | 'disarmed'
 export type GoalPhase = 'active' | 'paused' | 'blocked' | 'complete'
@@ -219,7 +219,7 @@ export interface Harness {
 }
 
 export async function createHarness(
-  options: { config?: Config; driver?: boolean; mountJobs?: boolean } = {},
+  options: { config?: RowConfig; driver?: boolean; mountJobs?: boolean } = {},
 ): Promise<Harness> {
   const ctx = new Context()
   await ctx.plugin(FakeAgents)
