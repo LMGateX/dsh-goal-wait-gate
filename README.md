@@ -74,7 +74,7 @@ That records the dependency and appends `dsh-goal-wait-gate` to the profile's `d
 
 **Migrating from a pre-bundle install:** delete the block between `# >>> dsh-goal-wait-gate >>>` and `# <<< dsh-goal-wait-gate <<<` in `$DSH_HOME/profiles/web/cordis.patch.yml`. The bundle layer mounts the same row id, so keeping both mounts the gate twice.
 
-**One row owns the continuation slot.** The layer disables DSH's own `goal-round-driver` row (mounted by `@deepseek-ai/dsh-base`) and this plugin mounts the driver itself, so the two can never race. `strategy` selects which driver, and a saved change remounts the row, which switches it in place:
+**One row owns the continuation slot.** The layer disables DSH's own `goal-round-driver` row (mounted by `@deepseek-ai/dsh-base`) and this plugin mounts the driver itself, so the two can never race. `strategy` selects which driver. Every field of the row schema is **volatile**: the host settings form hands it over as a live accessor, and a saved change applies at once — no row remount and no restart. `strategy` switches the mounted driver at the next checkpoint (a turn boundary, an idle edge or a goal change); `waitForJobs`, `waitForSubagents` and `maxHoldMs` are re-read at each gate evaluation:
 
 | `strategy` | Who drives | Composition change |
 |---|---|---|
@@ -103,7 +103,9 @@ Policy defaults live in the plugin's Schemastery schema: `strategy=activation`, 
 | `waitForSubagents` | `true` | Hold continuation while the session owns live subagent descendants. |
 | `maxHoldMs` | `0` | `0` holds indefinitely. A positive value releases a hold that outlives it, logs one warning per hold, and leaves the rest of that wait ungated (the release is not undone by the gate's own goal-change evaluation) — an escape hatch for stuck background work, not a silent stop. |
 
-Invalid configuration fails at load with an error naming the field.
+Invalid configuration fails at load with an error naming the field. A saved change is validated on the same path: a bad value is reported and the last good policy stays in force.
+
+**Why volatile matters.** `@deepseek-ai/dsh-settings` builds a form only from volatile fields (`volatileForm` returns nothing when no field carries `meta.volatile`), so a row with a plain schema loads fine and still shows no configuration at all. Volatility is also what makes the save live: cordis rejects a volatile node beneath a volatile ancestor, so the union branches stay plain under the volatile `strategy` field.
 
 ## Verification
 
@@ -113,6 +115,7 @@ pnpm test          # native startup/ownership assertions plus separate legacy fa
 pnpm check:hosts   # legacy entry/tests ONLY; typecheck supported hosts in isolated copies (default: 0.1.7-alpha.2, 0.1.7-rc.2, 0.2.0-rc.2)
 node scripts/check-startup-host.ts <dir>  # typecheck the shipped src/ against a DSH installation that already exists; reports whether that exact identity is pinned
 pnpm check:bundle  # isolated dry run of the shipped bundle layer against the local profile composition
+node scripts/check-settings-form.mjs  # mount the plugin on a real cordis context and ask the installed dsh-settings service for the row's namespace
 pnpm check         # all of the above
 ```
 
