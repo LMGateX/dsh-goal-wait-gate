@@ -1,6 +1,8 @@
 ---
-status: accepted
+status: superseded by ADR 0004
 ---
+
+> **Superseded (0.4.0).** [ADR 0004](<0004-row-owned-strategies.md>) turns this boot-only, opt-in owner into one bundle row that owns the continuation slot and exposes the same four strategies on the Plugins page. The `/startup` export described here remains for exotic hosts; the reasoning below is kept as history and is not current policy.
 
 # 增加独立、opt-in、版本固定的启动 owner，不改变 legacy 默认
 

@@ -54,7 +54,7 @@ A clean future migration requires a public scheduling defer **and re-evaluation*
 
 - DSH `0.1.7-alpha.2` through `0.2.0-rc.2` (declared peer range `>=0.1.7-alpha.2 <0.3`). DSH 0.2 enforces these peers **at load time with prereleases included**: a range that does not accept the running version makes the loader refuse the plugin (the explicit override is `dsh plugin allow-version`). `pnpm check:hosts` verifies the range against every host in the matrix.
 - Node >= 22.
-- Services: `agents` and `goals` are required; `jobs` is optional (without it, only subagent work gates).
+- Services: `agents` and `goals` are required; `sessions` must exist for a driver to mount (the row reports and mounts nothing without it); `jobs` is optional (without it, only subagent work gates).
 - The opt-in `dsh-goal-wait-gate/startup` owner is stricter than that peer range: it runs only on an exactly pinned published host — today `0.2.0-rc.2` and `0.2.1-alpha.1` — matched by package versions **and** the published native driver SHA-256 together. Any other distribution, including a newer alpha, is refused before a driver is mounted. Support is per artifact identity, not a version range; see the [support contract](<docs/startup-driver.md>).
 
 ## Install
@@ -70,24 +70,35 @@ The package ships a **DSH bundle layer** (`cordis.patch.yml`), so the ordinary b
 dsh plugin --profile web add /absolute/path/to/dsh-goal-wait-gate   # checkout, tarball or link:<path>
 ```
 
-That records the dependency and appends `dsh-goal-wait-gate` to the profile's `dsh.profile.bundles`, which is what switches the layer on; the sidebar **Plugins** page then lists it with its row, an on/off switch and its version, and `dsh plugin --profile web remove dsh-goal-wait-gate` removes both again. To mount it by hand instead, add the package to `dsh.profile.bundles` and leave the profile patch layer alone.
+That records the dependency and appends `dsh-goal-wait-gate` to the profile's `dsh.profile.bundles`, which is what switches the layer on; the sidebar **Plugins** page then lists it with its row, an on/off switch, its version and a configuration form. `dsh plugin --profile web remove dsh-goal-wait-gate` removes both again, and with them the `disabled: true` entry this layer puts on the host's own `goal-round-driver` row, so official behaviour returns. To mount it by hand instead, add the package to `dsh.profile.bundles` and leave the profile patch layer alone.
 
 **Migrating from a pre-bundle install:** delete the block between `# >>> dsh-goal-wait-gate >>>` and `# <<< dsh-goal-wait-gate <<<` in `$DSH_HOME/profiles/web/cordis.patch.yml`. The bundle layer mounts the same row id, so keeping both mounts the gate twice.
 
-Policy defaults live in the plugin: `waitForJobs=true`, `waitForSubagents=true`, `maxHoldMs=0`. The profile patch layer is applied **after** every bundle, so it still overrides them:
+**One row owns the continuation slot.** The layer disables DSH's own `goal-round-driver` row (mounted by `@deepseek-ai/dsh-base`) and this plugin mounts the driver itself, so the two can never race. `strategy` selects which driver, and a saved change remounts the row, which switches it in place:
+
+| `strategy` | Who drives | Composition change |
+|---|---|---|
+| `activation` (default) | the host's published native driver, mounted by this plugin, plus the disarm/resume gate | none beyond this layer |
+| `replacement` | this plugin's pinned TypeScript port, waiting on background eligibility | none |
+| `native` | the host's published native driver, untouched: official DSH behaviour | none |
+| `off` | nothing: the gate holds every goal, so nothing continues automatically | none |
+
+Policy defaults live in the plugin's Schemastery schema: `strategy=activation`, `waitForJobs=true`, `waitForSubagents=true`, `maxHoldMs=0`. The profile patch layer is applied **after** every bundle, so it still overrides them — the Plugins page writes exactly such an entry when you save the form:
 
 ```yaml
 - id: goal-wait-gate
   config:
+    strategy: native
     waitForJobs: false
 ```
 
-**Do not disable `goal-round-driver`.** The gate is designed to sit beside it: the driver still owns round reservation, the round prompt, accounting, and the race fences; the gate only decides whether continuation is armed.
+**Three ways back to official behaviour**, none of which writes to your profile by hand: pick `native` in the form; uninstall the plugin (the layer, including its `disabled` entry, disappears with it); or switch the row off. Switching the row off means *no automatic goal continuation* — the plugin is what mounts a driver — so prefer `native` when you want DSH's own behaviour to continue.
 
 ## Configuration
 
 | Field | Default | Meaning |
 |---|---|---|
+| `strategy` | `activation` | Which implementation owns goal continuation: `activation`, `replacement`, `native` or `off` (see the table above). |
 | `waitForJobs` | `true` | Hold continuation while the session owns running/stopping jobs. |
 | `waitForSubagents` | `true` | Hold continuation while the session owns live subagent descendants. |
 | `maxHoldMs` | `0` | `0` holds indefinitely. A positive value releases a hold that outlives it, logs one warning per hold, and leaves the rest of that wait ungated (the release is not undone by the gate's own goal-change evaluation) — an escape hatch for stuck background work, not a silent stop. |

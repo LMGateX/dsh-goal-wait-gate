@@ -4,6 +4,18 @@
 
 TypeScript startup owner, native-derived driver ported against two pinned published hosts and work policy; legacy root/default retained. [Support contract](<startup-driver.md>) and [ADR 0002](<adr/0002-opt-in-pinned-driver.md>) define opt-in selection, direct-root/fixed-topology prerequisites, original-native unverified cleanup and admission/holder limits. No GUI, launcher adapter, hot switching, npm release or plugin deployment is included.
 
+## Row-owned strategies (0.4.0)
+
+The bundle layer now hands this plugin the only continuation slot: it disables the host's `goal-round-driver` row in the same file that mounts this row, and the plugin mounts a driver per `strategy` (`activation` default, `replacement`, `native`, `off`), configured from the Plugins page through a native Schemastery `Config`. Rollback paths: pick `native`, uninstall (the layer and its `disabled` entry disappear together), or switch the row off. Two behavioural points are new: a mount-time sweep gates work that was already pending when the row mounted, and the ancestor walk that recognizes this row's own child drivers is cycle-safe — in a real Cordis realm `fiber.parent` is the parent *context*, whose `.fiber` is that same fiber, so the naive walk never terminated and blocked the event loop (that was the 0.3.0-attempt stall, reproduced with a handle/stack probe and fixed).
+
+| Layer | Result | Evidence scope |
+|---|---|---|
+| Row strategy/config tests | 10/10 PASS | Deterministic stand-in realm: schema shape and choices, bundle patch, card text, all four strategies, the foreign-driver guard and the unpinned-host fallback |
+| Combined suite on 0.2.1-alpha.1 | 99/99 PASS | 89 prior assertions plus the 10 row tests; every file exits without `--test-force-exit` |
+| Isolated bundle composition (`.bundle-check/`) | PASS | The host row is disabled by this layer, this row composes once, a profile-layer override still wins, and the entry exports a native Schemastery `Config` whose strategy union is the four documented choices |
+
+**Not yet proven:** the rendered form (and its choice list) and the hot switch on a saved config change need a real GUI with the plugin installed and the server restarted — installing on this machine requires user approval, so that remains a manual step.
+
 ## Executed checks
 
 | Layer | Result | Evidence scope |
