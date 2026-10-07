@@ -13,16 +13,32 @@
       "types": "./lib/types/startup.d.ts",
       "default": "./lib/startup.js"
     },
+    "./client": {
+      "types": "./client/public.d.ts",
+      "default": "./client/client.js"
+    },
+    "./client-types": {
+      "types": "./client/public.d.ts",
+      "default": "./client/public.js"
+    },
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json"
   },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
+      ]
     }
   },
   "files": [
     "lib",
+    "client",
     "cordis.patch.yml",
     "locale",
     "README.md",
@@ -41,7 +57,8 @@
     "check:startup-host": "node scripts/check-startup-host.ts",
     "check:bundle": "node scripts/check-bundle-layer.mjs",
     "check:settings": "node scripts/check-settings-form.mjs",
-    "check": "pnpm typecheck && pnpm test && pnpm check:hosts && pnpm check:bundle && pnpm check:settings",
+    "check:client": "node scripts/check-client.mjs",
+    "check": "pnpm typecheck && pnpm test && pnpm check:hosts && pnpm check:bundle && pnpm check:settings && pnpm check:client",
     "test:legacy": "node --test test/plugin.test.ts",
     "test:native": "node --test test/startup.test.ts test/ownership.test.ts test/host-profile.test.ts test/bundle-manifest.test.ts"
   },
