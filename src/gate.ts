@@ -15,7 +15,12 @@ import { hasLiveJobs, hasLiveSubagents } from './live-work.ts'
 /** Gate one live agent's goal continuation. */
 export class GoalWaitGate {
   readonly #ctx: Context
-  readonly #config: ResolvedGateConfig
+  /**
+   * The policy source, read at each decision. The row hands over a provider so
+   * a saved volatile change applies from the next evaluation; the boot API and
+   * tests may still pass a fixed policy object.
+   */
+  readonly #policy: () => ResolvedGateConfig
   /** Goal ids this gate disarmed and still owns, per exact live agent. */
   readonly #heldGoals = new Map<Agent, string>()
   /** Goal ids this gate conceded to an explicit human re-arm, per exact live agent. */
@@ -23,9 +28,9 @@ export class GoalWaitGate {
   readonly #expiryTimers = new Map<Agent, ReturnType<typeof setTimeout>>()
   #stopping = false
 
-  constructor(ctx: Context, config: ResolvedGateConfig) {
+  constructor(ctx: Context, policy: ResolvedGateConfig | (() => ResolvedGateConfig)) {
     this.#ctx = ctx
-    this.#config = config
+    this.#policy = typeof policy === 'function' ? policy : () => policy
   }
 
   /**
@@ -88,11 +93,12 @@ export class GoalWaitGate {
 
   /** Whether continuation must be withheld for this agent right now. */
   #hasLiveWork(agent: Agent): boolean {
+    const config = this.#policy()
     // The `off` strategy withholds unconditionally: no driver is mounted, so
     // holding every goal is what makes "no automatic continuation" true.
-    if (this.#config.alwaysHold === true) return true
-    if (this.#config.waitForJobs && hasLiveJobs(this.#ctx, agent)) return true
-    if (this.#config.waitForSubagents && hasLiveSubagents(this.#ctx, agent)) return true
+    if (config.alwaysHold === true) return true
+    if (config.waitForJobs && hasLiveJobs(this.#ctx, agent)) return true
+    if (config.waitForSubagents && hasLiveSubagents(this.#ctx, agent)) return true
     return false
   }
 
@@ -180,7 +186,7 @@ export class GoalWaitGate {
   /** Arm this hold's escape hatch, when a maximum hold time is configured. */
   #scheduleExpiry(agent: Agent): void {
     this.#clearExpiry(agent)
-    const { maxHoldMs } = this.#config
+    const { maxHoldMs } = this.#policy()
     if (maxHoldMs <= 0) return
     const timer = setTimeout(() => {
       this.#expiryTimers.delete(agent)
@@ -216,7 +222,7 @@ export class GoalWaitGate {
       if (goal !== undefined && goal.id === heldGoal && goal.phase === 'active' && goal.activation === 'disarmed') {
         this.#ctx.goals.resume(agent, goalRef(goal))
         this.#ctx.logger.warn(
-          `goal-wait-gate: released agent "${agent.id}" goal ${goal.id} rev ${goal.revision}: hold expired after ${this.#config.maxHoldMs}ms`,
+          `goal-wait-gate: released agent "${agent.id}" goal ${goal.id} rev ${goal.revision}: hold expired after ${this.#policy().maxHoldMs}ms`,
         )
       }
     } catch (error) {

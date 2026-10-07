@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "目标续行闸门",
-    "description": "由本插件统一提供目标续行驱动（bundle 层会禁用 DSH 自带的 goal-round-driver 行）。在插件页选择实现方式，默认 activation：activation＝官方原生驱动＋后台工作闸门（今天的行为）；replacement＝本插件移植的驱动，按后台资格等待；native＝仅官方原生驱动、不做干预，即官方行为；off＝不挂驱动，目标不再自动续行。回到官方行为有三条路：选 native（官方原样）、卸载本插件（禁用行随 bundle 层一并消失）、或关闭本插件行（等于不自动续行）。"
+    "description": "由本插件统一提供目标续行驱动（bundle 层会禁用 DSH 自带的 goal-round-driver 行）。在插件页选择实现方式，默认 activation：activation＝官方原生驱动＋后台工作闸门（今天的行为）；replacement＝本插件移植的驱动，按后台资格等待；native＝仅官方原生驱动、不做干预，即官方行为；off＝不挂驱动，目标不再自动续行。四个字段都是 volatile（保存即生效，无需重启、也不会重挂本行）：改 strategy 会在下一个检查点换驱动，改闸门策略会在下一次判定生效。回到官方行为有三条路：选 native（官方原样）、卸载本插件（禁用行随 bundle 层一并消失）、或关闭本插件行（等于不自动续行）。"
   }
 }

@@ -4,8 +4,15 @@
  * The bundle layer this package ships disables the host's own
  * `goal-round-driver` row, so this plugin is the thing that mounts a driver in
  * every strategy except `off`. The driver is a child of this row's fiber —
- * no root-parent requirement, no lifetime tombstone, and a saved config change
- * remounts the plugin, which switches the driver in place.
+ * no root-parent requirement and no lifetime tombstone.
+ *
+ * The row configuration is volatile: the host's settings form hands every field
+ * over as a live accessor, and a saved change does **not** remount this row.
+ * {@link applyStrategy} therefore returns a handle whose `sync()` re-reads the
+ * configuration and swaps the mounted driver in place. Sync runs on the
+ * checkpoints this plugin already owns — `agent/turn-stopping`, `agent/status`
+ * idle and `goal/changed` — so there is no polling timer and nothing that can
+ * keep the event loop alive.
  *
  * Strategy vocabulary and the rollback contract:
  * - `activation` (default): the host's published native driver callback, mounted
@@ -21,7 +28,8 @@
  * returns. No strategy writes to any profile file.
  */
 import type { Context, Fiber, Plugin } from '@deepseek-ai/cordis'
-import type { ResolvedRowConfig } from './config.ts'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import { resolveRowConfig, type ResolvedGateConfig, type ResolvedRowConfig, type RowConfig, type RowConfigInput, type Strategy } from './config.ts'
 import { GoalWaitGate } from './gate.ts'
 import { createBackgroundPolicy } from './driver/background-work.ts'
 import { assertHostVersion } from './driver/host-version.ts'
@@ -44,6 +52,22 @@ export interface StrategyOptions {
   readonly detectHost?: (ctx: Context) => Promise<{ distribution: string; driver: { removeCancelledQueuedMessage: boolean } }>
   /** How long a child mount may stay pending before it is reported, in ms. */
   readonly mountTimeoutMs?: number
+}
+
+/** A mounted row: what is driving now, and how to follow a saved change. */
+export interface StrategyHandle {
+  /**
+   * Re-read the volatile configuration and switch the mounted driver when the
+   * strategy changed. Idempotent, serialized, and safe to call on every
+   * checkpoint.
+   *
+   * @returns a promise resolving once this row matches the saved configuration.
+   */
+  sync(): Promise<void>
+  /** Dispose whatever this row mounted. Idempotent. */
+  dispose(): Promise<void>
+  /** The strategy mounted right now, or undefined before the first mount. */
+  current(): Strategy | undefined
 }
 
 /** Outcome of waiting for a child fiber to settle. */
@@ -108,26 +132,255 @@ function importNativeDriver(): Promise<NativeDriverModule> {
 }
 
 /**
- * Apply the configured strategy on this plugin's fiber.
+ * Mount the configured strategy and return the handle that keeps it current.
  *
  * @param ctx - this plugin's context.
- * @param config - the resolved row configuration.
+ * @param config - the raw row configuration, live accessors included.
  * @param options - seams used by tests.
+ * @returns the mounted row.
  */
-export async function applyStrategy(ctx: Context, config: ResolvedRowConfig, options: StrategyOptions = {}): Promise<void> {
-  if (config.strategy === 'off') {
-    mountGate(ctx, config, true)
-    ctx.logger.info('goal-wait-gate: strategy=off — no driver is mounted, so no goal continues automatically until this plugin is switched off or uninstalled')
-    return
+export async function applyStrategy(ctx: Context, config: RowConfig | RowConfigInput = {}, options: StrategyOptions = {}): Promise<StrategyHandle> {
+  const row = new RowStrategy(ctx, config, options)
+  // The first mount is fatal on a bad configuration — a composition error must
+  // fail the load — while a later checkpoint only reports one.
+  await row.mount()
+  return row
+}
+
+/** One mounted row: the driver child, its gate, and the live configuration behind them. */
+class RowStrategy implements StrategyHandle {
+  readonly #ctx: Context
+  readonly #config: RowConfig | RowConfigInput
+  readonly #options: StrategyOptions
+  readonly #drivers: Fiber[] = []
+  #gate: GoalWaitGate | undefined
+  #strategy: Strategy | undefined
+  #queue: Promise<void> = Promise.resolve()
+  #closed = false
+
+  constructor(ctx: Context, config: RowConfig | RowConfigInput, options: StrategyOptions) {
+    this.#ctx = ctx
+    this.#config = config
+    this.#options = options
+    // The checkpoints this plugin already owns carry the live re-read: a saved
+    // configuration change is applied at the next turn boundary, idle edge or
+    // goal change. No timer is ever installed for it.
+    ctx.on('agent/turn-stopping', ({ agent }) => this.#checkpoint(agent))
+    ctx.on('agent/status', ({ agent, status }) => {
+      if (status === 'idle') this.#checkpoint(agent)
+    }, { prepend: true })
+    ctx.on('goal/changed', ({ agent }) => this.#checkpoint(agent), { prepend: true })
+    ctx.on('agent/disposed', ({ agent }) => this.#gate?.forget(agent))
+    ctx.effect(() => () => this.#close(), 'goal-wait-gate teardown')
   }
-  if (foreignDriverActive(ctx)) {
-    ctx.logger.error('goal-wait-gate: another goal-round driver is already mounted; this plugin stays inert so a goal is never driven twice')
-    return
+
+  current(): Strategy | undefined {
+    return this.#strategy
   }
-  const gate = config.strategy === 'activation' ? mountGate(ctx, config, false) : undefined
-  const mounted = await mountDriver(ctx, config, options, gate)
-  if (!mounted) return
-  ctx.logger.info(`goal-wait-gate: strategy=${config.strategy} — ${describe(config, gate !== undefined)} (waitForJobs=${config.waitForJobs}, waitForSubagents=${config.waitForSubagents}, maxHoldMs=${config.maxHoldMs})`)
+
+  sync(): Promise<void> {
+    return this.#enqueue(false)
+  }
+
+  mount(): Promise<void> {
+    return this.#enqueue(true)
+  }
+
+  /**
+   * Serialize one application of the live configuration.
+   *
+   * @param fatal - when true the returned promise rejects on a bad configuration
+   *   (the initial mount); otherwise the error is logged and the row survives it.
+   * @returns the queued application.
+   */
+  #enqueue(fatal: boolean): Promise<void> {
+    const next = this.#queue.then(async () => await this.#apply())
+    this.#queue = next.catch((error: unknown) => {
+      this.#ctx.logger.error(`goal-wait-gate: could not apply the saved configuration: ${messageOf(error)}`)
+    })
+    return fatal ? next : this.#queue
+  }
+
+  dispose(): Promise<void> {
+    this.#close()
+    return Promise.resolve()
+  }
+
+  /** One checkpoint: follow the saved configuration, then evaluate the live gate. */
+  #checkpoint(agent: Agent): void {
+    void this.sync()
+    this.#gate?.evaluate(agent)
+  }
+
+  /** Bring the mounted driver in line with the live configuration. */
+  async #apply(): Promise<void> {
+    if (this.#closed) return
+    const config = resolveRowConfig(this.#config)
+    if (this.#strategy === config.strategy) return
+    await this.#teardown()
+    if (this.#closed) return
+    this.#strategy = config.strategy
+    await this.#mount(config)
+  }
+
+  /** Mount what one strategy needs, recording every child for the next teardown. */
+  async #mount(config: ResolvedRowConfig): Promise<void> {
+    if (config.strategy === 'off') {
+      this.#mountGate(config, true)
+      this.#ctx.logger.info('goal-wait-gate: strategy=off — no driver is mounted, so no goal continues automatically until this plugin is switched off or uninstalled')
+      return
+    }
+    if (foreignDriverActive(this.#ctx)) {
+      this.#ctx.logger.error('goal-wait-gate: another goal-round driver is already mounted; this plugin stays inert so a goal is never driven twice')
+      return
+    }
+    const gated = config.strategy === 'activation'
+    if (gated) this.#mountGate(config, false)
+    const mounted = await this.#mountDriver(config)
+    if (!mounted) return
+    const snapshot = resolveRowConfig(this.#config)
+    this.#ctx.logger.info(`goal-wait-gate: strategy=${config.strategy} — ${describe(snapshot, gated)} (waitForJobs=${snapshot.waitForJobs}, waitForSubagents=${snapshot.waitForSubagents}, maxHoldMs=${snapshot.maxHoldMs})`)
+  }
+
+  /**
+   * Install the gate with a live policy provider, then sweep every live agent.
+   *
+   * The provider is read at each evaluation, so `waitForJobs`,
+   * `waitForSubagents` and `maxHoldMs` apply from the next decision without
+   * remounting anything.
+   *
+   * @param config - the configuration the gate was mounted under.
+   * @param alwaysHold - when true (`off`) continuation is withheld unconditionally.
+   * @returns the mounted gate.
+   */
+  #mountGate(config: ResolvedRowConfig, alwaysHold: boolean): GoalWaitGate {
+    const gate = new GoalWaitGate(this.#ctx, () => this.#policy(alwaysHold, config))
+    this.#gate = gate
+    // A row mounts — or switches strategy — while work may already be pending.
+    // Gate whatever is live right now instead of waiting for a turn boundary
+    // that an idle agent may never reach.
+    for (const agent of this.#ctx.agents.list()) gate.evaluate(agent)
+    return gate
+  }
+
+  /** The gate policy as it stands right now; a bad saved value keeps the last good shape. */
+  #policy(alwaysHold: boolean, mounted: ResolvedRowConfig): ResolvedGateConfig {
+    try {
+      const live = resolveRowConfig(this.#config)
+      return { waitForJobs: live.waitForJobs, waitForSubagents: live.waitForSubagents, maxHoldMs: live.maxHoldMs, alwaysHold }
+    } catch (error) {
+      this.#ctx.logger.error(`goal-wait-gate: ignoring an invalid saved policy (${messageOf(error)})`)
+      return { waitForJobs: mounted.waitForJobs, waitForSubagents: mounted.waitForSubagents, maxHoldMs: mounted.maxHoldMs, alwaysHold }
+    }
+  }
+
+  /**
+   * Mount the driver one strategy asks for, keeping the child for teardown.
+   *
+   * A strategy whose pinned identity does not match this distribution falls
+   * back to activation-shaped behaviour: the host's own driver plus the gate.
+   * Goals are never left undriven, and the failure is logged once.
+   *
+   * @param config - resolved row configuration.
+   * @returns whether a driver is mounted.
+   */
+  async #mountDriver(config: ResolvedRowConfig): Promise<boolean> {
+    const ctx = this.#ctx
+    const options = this.#options
+    // Cheap realm probe before the dynamic import: a unit-test realm or a
+    // partial composition has no `sessions` service, and the host driver cannot
+    // run there anyway (its own inject list requires it). Skipping the import
+    // keeps such a realm from holding a fiber that can never start.
+    if (service(ctx, 'sessions') === undefined) {
+      ctx.logger.error(`goal-wait-gate: this realm provides no "sessions" service, so the host goal-round driver cannot run; no driver is mounted by the ${config.strategy} strategy`)
+      return false
+    }
+    const load = options.importNativeDriver ?? importNativeDriver
+    const detect = options.detectHost ?? (async (scope: Context) => await assertHostVersion(scope))
+    if (config.strategy === 'replacement') {
+      let profile
+      try {
+        profile = await detect(ctx)
+      } catch (error) {
+        return await this.#fallbackToActivation(config, `this host distribution is not pinned for the ported driver (${messageOf(error)})`)
+      }
+      if (foreignDriverActive(ctx)) {
+        ctx.logger.error('goal-wait-gate: another goal-round driver appeared while mounting; the ported driver was not mounted')
+        return false
+      }
+      const child = ctx.plugin({
+        name: REPLACEMENT_DRIVER_NAME,
+        inject: ['agents', 'goals', 'sessions', 'jobs'],
+        apply(driverCtx: Context) {
+          const driver = installNativeDriver(driverCtx, createBackgroundPolicy(driverCtx, config), profile.driver)
+          driverCtx.effect(() => () => driver.stop(), 'goal-wait-gate replacement driver')
+        },
+      }) as unknown as Fiber
+      this.#drivers.push(child)
+      const outcome = await settleMount(child, options)
+      if (outcome === 'failed') {
+        this.#drivers.splice(this.#drivers.indexOf(child), 1)
+        await child.dispose().catch(() => {})
+        return await this.#fallbackToActivation(config, 'the ported driver could not be mounted')
+      }
+      if (outcome === 'pending') ctx.logger.error('goal-wait-gate: the ported driver is still waiting for the services it injects; it mounts as soon as they appear')
+      return true
+    }
+    let native: NativeDriverModule
+    try {
+      native = await load()
+    } catch (error) {
+      ctx.logger.error(`goal-wait-gate: the host goal-round driver could not be imported (${messageOf(error)}); no driver is mounted`)
+      return false
+    }
+    if (foreignDriverActive(ctx)) {
+      ctx.logger.error('goal-wait-gate: another goal-round driver appeared while mounting; this plugin stays inert')
+      return false
+    }
+    const missing = injectList(native).filter(name => service(ctx, name) === undefined)
+    if (missing.length > 0) {
+      ctx.logger.error(`goal-wait-gate: the host goal-round driver injects ${missing.join(', ')}, which this realm does not provide; no driver is mounted by the ${config.strategy} strategy`)
+      return false
+    }
+    // The host module is mounted without blocking this row's apply: a plugin
+    // whose inject list is not satisfied stays pending, which is how cordis
+    // defers a mount until its dependencies exist, and waiting for that is not
+    // something this row may impose on the whole composition.
+    const fiber = ctx.plugin(native) as unknown as Fiber
+    this.#drivers.push(fiber)
+    watchMount(ctx, fiber, 'the host goal-round driver', options)
+    return true
+  }
+
+  /** Keep goals driven: mount the host driver beside the gate after a failure. */
+  async #fallbackToActivation(config: ResolvedRowConfig, why: string): Promise<boolean> {
+    const ctx = this.#ctx
+    ctx.logger.error(`goal-wait-gate: ${config.strategy} cannot be honoured — ${why}; falling back to the host driver beside the gate`)
+    if (this.#gate === undefined) this.#mountGate(config, false)
+    return await this.#mountDriver({ ...config, strategy: 'activation' })
+  }
+
+  /** Drop the current driver and gate without closing the row. */
+  async #teardown(): Promise<void> {
+    const drivers = this.#drivers.splice(0, this.#drivers.length)
+    const gate = this.#gate
+    this.#gate = undefined
+    this.#strategy = undefined
+    gate?.dispose()
+    for (const driver of drivers) await driver.dispose().catch(() => {})
+  }
+
+  /** Close the row: the gate re-arms its holds, the children are disposed. */
+  #close(): void {
+    if (this.#closed) return
+    this.#closed = true
+    const drivers = this.#drivers.splice(0, this.#drivers.length)
+    const gate = this.#gate
+    this.#gate = undefined
+    this.#strategy = undefined
+    gate?.dispose()
+    for (const driver of drivers) void driver.dispose().catch(() => {})
+  }
 }
 
 /** One line describing who is driving. */
@@ -135,81 +388,6 @@ function describe(config: ResolvedRowConfig, gated: boolean): string {
   if (config.strategy === 'native') return 'the host driver is mounted unchanged; this plugin does not interfere'
   if (config.strategy === 'replacement') return 'the ported driver owns the scheduler and waits on background eligibility'
   return gated ? 'the host driver is mounted beside the disarm/resume gate' : 'the host driver is mounted'
-}
-
-/**
- * Mount the configured driver as a child of this row.
- *
- * A strategy whose pinned identity does not match this distribution falls back
- * to activation-shaped behaviour: the host's own driver plus the gate. Goals
- * are never left undriven, and the failure is logged once.
- *
- * @param ctx - this plugin's context.
- * @param config - resolved row configuration.
- * @param options - seams used by tests.
- * @param gate - the already-mounted activation gate, when there is one.
- * @returns whether a driver is mounted.
- */
-async function mountDriver(ctx: Context, config: ResolvedRowConfig, options: StrategyOptions, gate: GoalWaitGate | undefined): Promise<boolean> {
-  // Cheap realm probe before the dynamic import: a unit-test realm or a
-  // partial composition has no `sessions` service, and the host driver cannot
-  // run there anyway (its own inject list requires it). Skipping the import
-  // keeps such a realm from holding a fiber that can never start.
-  if (service(ctx, 'sessions') === undefined) {
-    ctx.logger.error(`goal-wait-gate: this realm provides no "sessions" service, so the host goal-round driver cannot run; no driver is mounted by the ${config.strategy} strategy`)
-    return false
-  }
-  const load = options.importNativeDriver ?? importNativeDriver
-  const detect = options.detectHost ?? (async (scope: Context) => await assertHostVersion(scope))
-  if (config.strategy === 'replacement') {
-    let profile
-    try {
-      profile = await detect(ctx)
-    } catch (error) {
-      return await fallbackToActivation(ctx, config, options, gate, `this host distribution is not pinned for the ported driver (${messageOf(error)})`)
-    }
-    if (foreignDriverActive(ctx)) {
-      ctx.logger.error('goal-wait-gate: another goal-round driver appeared while mounting; the ported driver was not mounted')
-      return false
-    }
-    const child = ctx.plugin({
-      name: REPLACEMENT_DRIVER_NAME,
-      inject: ['agents', 'goals', 'sessions', 'jobs'],
-      apply(driverCtx: Context) {
-        const driver = installNativeDriver(driverCtx, createBackgroundPolicy(driverCtx, config), profile.driver)
-        driverCtx.effect(() => () => driver.stop(), 'goal-wait-gate replacement driver')
-      },
-    })
-    const outcome = await settleMount(child, options)
-    if (outcome === 'failed') {
-      await child.dispose().catch(() => {})
-      return await fallbackToActivation(ctx, config, options, gate, 'the ported driver could not be mounted')
-    }
-    if (outcome === 'pending') ctx.logger.error('goal-wait-gate: the ported driver is still waiting for the services it injects; it mounts as soon as they appear')
-    return true
-  }
-  let native: NativeDriverModule
-  try {
-    native = await load()
-  } catch (error) {
-    ctx.logger.error(`goal-wait-gate: the host goal-round driver could not be imported (${messageOf(error)}); no driver is mounted`)
-    return false
-  }
-  if (foreignDriverActive(ctx)) {
-    ctx.logger.error('goal-wait-gate: another goal-round driver appeared while mounting; this plugin stays inert')
-    return false
-  }
-  const missing = injectList(native).filter(name => service(ctx, name) === undefined)
-  if (missing.length > 0) {
-    ctx.logger.error(`goal-wait-gate: the host goal-round driver injects ${missing.join(', ')}, which this realm does not provide; no driver is mounted by the ${config.strategy} strategy`)
-    return false
-  }
-  // The host module is mounted without blocking this row's apply: a plugin
-  // whose inject list is not satisfied stays pending, which is how cordis
-  // defers a mount until its dependencies exist, and waiting for that is not
-  // something this row may impose on the whole composition.
-  watchMount(ctx, ctx.plugin(native), 'the host goal-round driver', options)
-  return true
 }
 
 /**
@@ -264,39 +442,6 @@ async function settleMount(fiber: Fiber, options: StrategyOptions): Promise<Moun
   } finally {
     if (timer !== undefined) clearTimeout(timer)
   }
-}
-
-/** Keep goals driven: mount the host driver beside the gate after a failure. */
-async function fallbackToActivation(ctx: Context, config: ResolvedRowConfig, options: StrategyOptions, gate: GoalWaitGate | undefined, why: string): Promise<boolean> {
-  ctx.logger.error(`goal-wait-gate: ${config.strategy} cannot be honoured — ${why}; falling back to the host driver beside the gate`)
-  mountGate(ctx, config, false, gate)
-  return await mountDriver(ctx, { ...config, strategy: 'activation' }, options, gate ?? undefined)
-}
-
-/**
- * Mount the gate, optionally holding regardless of observed work.
- *
- * @param ctx - this plugin's context.
- * @param config - resolved row configuration.
- * @param alwaysHold - when true (`off`) continuation is withheld unconditionally.
- * @param existing - an already-mounted gate, so a fallback does not install two.
- * @returns the mounted gate.
- */
-function mountGate(ctx: Context, config: ResolvedRowConfig, alwaysHold: boolean, existing?: GoalWaitGate): GoalWaitGate {
-  if (existing !== undefined) return existing
-  const gate = new GoalWaitGate(ctx, { ...config, alwaysHold })
-  ctx.on('agent/turn-stopping', ({ agent }) => gate.evaluate(agent))
-  ctx.on('agent/status', ({ agent, status }) => {
-    if (status === 'idle') gate.evaluate(agent)
-  }, { prepend: true })
-  ctx.on('goal/changed', ({ agent }) => gate.evaluate(agent), { prepend: true })
-  ctx.on('agent/disposed', ({ agent }) => gate.forget(agent))
-  ctx.effect(() => () => gate.dispose(), 'goal-wait-gate teardown')
-  // A row mounts — or remounts after a saved configuration change — while
-  // work may already be pending. Gate whatever is live right now instead of
-  // waiting for a turn boundary that an idle agent may never reach.
-  for (const agent of ctx.agents.list()) gate.evaluate(agent)
-  return gate
 }
 
 /** The service names one plugin declares it needs, in either inject shape. */

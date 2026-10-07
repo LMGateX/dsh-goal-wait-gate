@@ -12,7 +12,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import type { Context, Fiber, Plugin } from '@deepseek-ai/cordis'
-import { Config, resolveRowConfig, strategies } from '../src/config.ts'
+import Schema from '@deepseek-ai/schemastery'
+import { Config, resolveRowConfig, strategies, type Strategy } from '../src/config.ts'
 import { applyStrategy, foreignDriverActive, NATIVE_DRIVER_NAME, REPLACEMENT_DRIVER_NAME } from '../src/mode.ts'
 import type { StrategyOptions } from '../src/mode.ts'
 
@@ -33,6 +34,8 @@ interface Realm {
   readonly effects: (() => unknown)[]
   readonly disposals: number[]
   foreign(name: string): void
+  /** Dispatch one plugin checkpoint exactly as cordis would. */
+  emit(event: string, payload: unknown): void
 }
 
 /** Build a stand-in context with the service and fiber shapes cordis provides. */
@@ -50,6 +53,7 @@ function realm(): Realm {
   }
   const sessions = { flush: async () => {} }
   const goal = { id: 'goal-1', revision: 3, phase: 'active', activation: 'armed' }
+  const handlers = new Map<string, ((payload: never) => void)[]>()
   const fiber = { parent: undefined as { fiber: unknown } | undefined, uid: 1 }
   const ctx = {
     fiber,
@@ -71,7 +75,11 @@ function realm(): Realm {
     jobs,
     sessions,
     get: (name: string) => (name === 'jobs' ? jobs : name === 'sessions' ? sessions : undefined),
-    on: () => {},
+    on: (event: string, handler: (payload: never) => void) => {
+      const list = handlers.get(event) ?? []
+      list.push(handler)
+      handlers.set(event, list)
+    },
     effect: (callback: () => unknown) => {
       const cleanup = callback()
       if (typeof cleanup === 'function') effects.push(cleanup as () => unknown)
@@ -97,6 +105,9 @@ function realm(): Realm {
     disposals,
     foreign(name: string) {
       fibers.push({ runtime: { name }, uid: 3, parent: { fiber: { uid: 99 } } })
+    },
+    emit(event: string, payload: unknown) {
+      for (const handler of handlers.get(event) ?? []) handler(payload as never)
     },
   }
 }
@@ -214,3 +225,117 @@ test('a foreign driver makes the row stay inert instead of driving twice', async
   assert.equal(space.logs.filter(line => line.includes('already mounted')).length, 1, 'the conflict was not reported once')
   assert.deepEqual(space.disarmed, [], 'the row must not fight a foreign driver')
 })
+
+/**
+ * The host predicate that decides whether the Plugins page gets a form at all,
+ * copied from `@deepseek-ai/dsh-settings` (`volatileForm`): recurse into an
+ * object, return a field only when it carries `meta.volatile`, and return
+ * undefined when no field survives.
+ */
+function volatileForm(schema: Schema): Schema | undefined {
+  if (Reflect.get(schema.meta, 'volatile') === true) return new Schema(schema.toJSON())
+  if (Reflect.get(schema, 'type') === 'object') {
+    const dict: Record<string, Schema> = {}
+    for (const [key, child] of Object.entries((Reflect.get(schema, 'dict') ?? {}) as Record<string, Schema>)) {
+      const field = volatileForm(child)
+      if (field !== undefined) dict[key] = field
+    }
+    return Object.keys(dict).length === 0 ? undefined : Schema.object(dict)
+  }
+  return undefined
+}
+
+test('every row-config field is volatile, which is what gives the card a form', () => {
+  const serialized = Config.toJSON() as {
+    refs: Record<string, { type: string; meta?: { volatile?: unknown; description?: string }; dict?: Record<string, string> }>
+  }
+  const envelope = serialized.refs[String((Config.toJSON() as { uid: number }).uid)]!
+  for (const field of Object.keys(envelope.dict ?? {})) {
+    const node = serialized.refs[envelope.dict![field]!]!
+    assert.equal(node.meta?.volatile, true, field + ' is not volatile, so the host serves no form field for it')
+  }
+  // The volatile marker belongs to the field, never to a node beneath one:
+  // cordis rejects "volatile fields require a fixed object path without an
+  // enclosing volatile field" when a volatile node has a volatile ancestor.
+  const strategyNode = serialized.refs[envelope.dict!['strategy']!]!
+  assert.equal(strategyNode.meta?.volatile, true, 'the strategy field is not volatile')
+  for (const branch of (strategyNode as { list?: string[] }).list ?? []) {
+    assert.equal(serialized.refs[branch]!.meta?.volatile ?? false, false, 'a union branch must not be volatile inside a volatile union')
+  }
+})
+
+test('the host volatileForm filter yields a non-empty object schema for this row', () => {
+  assert.equal(Reflect.get(Config, Symbol.for('schemastery')), true, 'not a native schemastery node')
+  assert.equal(Reflect.get(Config, 'type'), 'object', 'the row Config is not an object schema')
+  assert.equal(typeof Reflect.get(Config, 'meta'), 'object', 'the row Config has no meta object')
+  const form = volatileForm(Config)
+  assert.notEqual(form, undefined, 'volatileForm(Config) returned undefined: the Plugins page would render no namespace at all')
+  assert.equal(Reflect.get(form!, 'type'), 'object')
+  const dict = Reflect.get(form!, 'dict') as Record<string, Schema>
+  assert.deepEqual(Object.keys(dict).sort(), ['maxHoldMs', 'strategy', 'waitForJobs', 'waitForSubagents'])
+  const union = dict['strategy']!
+  assert.equal(Reflect.get(union, 'type'), 'union')
+  const list = Reflect.get(union, 'list') as Schema[]
+  assert.deepEqual(list.map(branch => Reflect.get(branch, 'value')), [...strategies])
+  assert.equal(Reflect.get(Reflect.get(union, 'meta') as object, 'default'), 'activation')
+})
+
+test('a changed live strategy swaps the driver in place, with exactly one driver left', async () => {
+  const space = realm()
+  let strategy: Strategy = 'activation'
+  let waitForJobs = true
+  const live = {
+    strategy: { get: () => strategy },
+    waitForJobs: { get: () => waitForJobs },
+    waitForSubagents: { get: () => true },
+    maxHoldMs: { get: () => 0 },
+  }
+  const handle = await applyStrategy(space.ctx, live, {
+    importNativeDriver: async () => nativeStandIn,
+    detectHost: async () => ({ distribution: '0.2.1-alpha.1', driver: { removeCancelledQueuedMessage: true } }),
+  })
+  assert.equal(handle.current(), 'activation')
+  assert.deepEqual(space.mounted, [NATIVE_DRIVER_NAME])
+  assert.deepEqual(space.disarmed, ['disarm'], 'the gate did not hold for the live job')
+
+  // A saved change is visible at the next sync; nothing is remounted but the driver.
+  strategy = 'native'
+  await handle.sync()
+  assert.equal(handle.current(), 'native')
+  assert.deepEqual(space.mounted, [NATIVE_DRIVER_NAME, NATIVE_DRIVER_NAME], 'the host driver was not remounted')
+  assert.equal(space.disposals.length, 1, 'the previous driver child was not disposed')
+  assert.deepEqual(space.disarmed, ['disarm', 'resume'], 'leaving activation must re-arm the hold this gate owned')
+  const liveDrivers = () => [...space.ctx.registry.values()]
+    .flatMap(runtime => [...runtime.fibers])
+    .filter(fiber => fiber.uid !== null && fiber.runtime?.name === NATIVE_DRIVER_NAME).length
+  assert.equal(liveDrivers(), 1, 'two drivers are mounted at once')
+
+  // Idempotent: a second sync with the same strategy mounts nothing.
+  await handle.sync()
+  assert.equal(space.mounted.length, 2, 'sync is not idempotent')
+  assert.equal(liveDrivers(), 1)
+
+  // The row itself stays mounted after the swap.
+  for (const cleanup of space.effects) cleanup()
+  assert.equal(handle.current(), undefined)
+})
+
+test('a live policy change applies at the next evaluation without a remount', async () => {
+  const space = realm()
+  let waitForJobs = true
+  const live = {
+    strategy: { get: () => 'activation' as const },
+    waitForJobs: { get: () => waitForJobs },
+    waitForSubagents: { get: () => true },
+    maxHoldMs: { get: () => 0 },
+  }
+  await applyStrategy(space.ctx, live, { importNativeDriver: async () => nativeStandIn })
+  assert.deepEqual(space.disarmed, ['disarm'])
+
+  waitForJobs = false
+  // The gate's bookkeeping is keyed by the exact live agent object, as cordis dispatches it.
+  space.emit('agent/turn-stopping', { agent: space.ctx.agents.list()[0] })
+  assert.deepEqual(space.disarmed, ['disarm', 'resume'], 'the saved waitForJobs change did not apply at the next evaluation')
+  assert.deepEqual(space.mounted, [NATIVE_DRIVER_NAME], 'a policy change must not remount the driver')
+})
+

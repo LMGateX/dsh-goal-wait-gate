@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Goal wait gate",
-    "description": "One plugin owns goal continuation (its bundle layer disables DSH's own goal-round-driver row). Pick the implementation on the plugin page; activation is the default: activation — the host native driver plus the background-work gate (today's behaviour); replacement — this plugin's ported driver, waiting on background eligibility; native — the host driver alone, untouched: official behaviour; off — no driver, so no goal continues automatically. Three ways back to official behaviour: choose native, uninstall the plugin (the disable entry ships with it), or switch this row off (continuation stops)."
+    "description": "One plugin owns goal continuation (its bundle layer disables DSH's own goal-round-driver row). Pick the implementation on the plugin page; activation is the default: activation — the host native driver plus the background-work gate (today's behaviour); replacement — this plugin's ported driver, waiting on background eligibility; native — the host driver alone, untouched: official behaviour; off — no driver, so no goal continues automatically. Every field is volatile and applies at once (no restart, no remount of this row): a saved strategy switches the driver at the next checkpoint, a gate-policy change at the next evaluation. Three ways back to official behaviour: choose native, uninstall the plugin (the disable entry ships with it), or switch this row off (continuation stops)."
   }
 }

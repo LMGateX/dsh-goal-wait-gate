@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHarness } from './harness.ts'
-import type { RowConfig } from '../src/index.ts'
+import type { RowConfigInput } from '../src/index.ts'
 
 test('with no background work the gate consults the goal and mutates nothing', async () => {
   const harness = await createHarness()
@@ -311,7 +311,7 @@ test('an invalid config fails the mount with a clear error', async () => {
   await assert.rejects(() => createHarness({ config: { maxHoldMs: -1 } }), /maxHoldMs/)
   await assert.rejects(() => createHarness({ config: { maxHoldMs: 1.5 } }), /maxHoldMs/)
   await assert.rejects(
-    () => createHarness({ config: { waitForJobs: 'yes' } as unknown as RowConfig }),
+    () => createHarness({ config: { waitForJobs: 'yes' } as unknown as RowConfigInput }),
     /waitForJobs/,
   )
 })
