@@ -6,7 +6,13 @@ import type { SubagentRunId, SubagentRunInfo } from '@deepseek-ai/dsh-subagent'
 import type { DriverPolicy } from './native-driver.ts'
 
 export interface BackgroundConfig { waitForJobs?: boolean; waitForSubagents?: boolean }
-export function createBackgroundPolicy(ctx: Context, config: BackgroundConfig = {}): DriverPolicy {
+/** Settings read at the moment of a decision, so a saved policy never remounts the driver. */
+export type BackgroundConfigSource = BackgroundConfig | (() => BackgroundConfig)
+export function createBackgroundPolicy(ctx: Context, source: BackgroundConfigSource = {}): DriverPolicy {
+  const settings = (): BackgroundConfig => {
+    const value = typeof source === 'function' ? source() : source
+    return value ?? {}
+  }
   const handoffs = new Map<Agent, number>()
   const epochs = new Map<SubagentRunId, readonly Agent[]>()
   let unavailable = false
@@ -25,7 +31,7 @@ export function createBackgroundPolicy(ctx: Context, config: BackgroundConfig = 
     }
     return result
   }
-  const countsJob = (job: {kind: string}): boolean => config.waitForJobs !== false || (config.waitForSubagents !== false && job.kind === 'subagent')
+  const countsJob = (job: {kind: string}): boolean => settings().waitForJobs !== false || (settings().waitForSubagents !== false && job.kind === 'subagent')
   const hasDescendant = (agent: Agent): boolean => ctx.agents.list().some(child => ancestors(child).includes(agent))
   /**
    * Runs this realm cannot place on an owning agent, keyed by run id.
@@ -52,7 +58,7 @@ export function createBackgroundPolicy(ctx: Context, config: BackgroundConfig = 
       if (unavailable) throw new Error('Published background work cannot be observed safely')
       if (closed || handoffs.has(agent) || unplaceable.size > 0) return false
       if (ctx.jobs.list(agent.id).some(job => countsJob(job) && job.owner === agent.id && (job.status === 'running' || job.status === 'stopping'))) return false
-      if (config.waitForSubagents !== false && (hasDescendant(agent) || [...epochs.values()].some(chain => chain.includes(agent)))) return false
+      if (settings().waitForSubagents !== false && (hasDescendant(agent) || [...epochs.values()].some(chain => chain.includes(agent)))) return false
       return true
     },
     subscribe(wake) {
@@ -61,7 +67,7 @@ export function createBackgroundPolicy(ctx: Context, config: BackgroundConfig = 
         if (closed) return
         for (const agent of new Set(agents)) if (ctx.agents.get(agent.id) === agent) wake(agent)
       })
-      if (config.waitForJobs !== false || config.waitForSubagents !== false) stops.push(ctx.jobs.events.subscribe({owners: 'all'}, event => {
+      if (settings().waitForJobs !== false || settings().waitForSubagents !== false) stops.push(ctx.jobs.events.subscribe({owners: 'all'}, event => {
         if (closed || !('job' in event) || !countsJob(event.job) || event.job.owner === undefined || !['registered', 'settled', 'stopping', 'removed'].includes(event.type)) return
         const agent = ctx.agents.get(event.job.owner)
         if (agent === undefined) return
@@ -75,7 +81,7 @@ export function createBackgroundPolicy(ctx: Context, config: BackgroundConfig = 
           if (ctx.agents.get(agent.id) === agent) wake(agent)
         })
       }))
-      if (config.waitForSubagents !== false) {
+      if (settings().waitForSubagents !== false) {
         /**
          * One activation started.
          *
@@ -93,7 +99,18 @@ export function createBackgroundPolicy(ctx: Context, config: BackgroundConfig = 
           const childChain = child === undefined ? [] : ancestors(child)
           const chain = childChain.length > 0 ? childChain : lineageParent(ctx, info.id, parent)
           if (chain.length === 0) {
-            if (!unplaceable.has(info.runId)) { unplaceable.add(info.runId); notify(ctx.agents.list()) }
+            if (!unplaceable.has(info.runId)) {
+              unplaceable.add(info.runId)
+              // Fail closed, but never forever: an activation whose end never
+              // arrives must not freeze goal continuation for the whole realm.
+              const timer = setTimeout(() => {
+                if (!unplaceable.delete(info.runId)) return
+                ctx.logger.warn(`goal-wait-gate: unplaceable subagent run ${info.runId} never ended; releasing the hold`)
+                notify(ctx.agents.list())
+              }, 30 * 60 * 1000)
+              timer.unref?.()
+              notify(ctx.agents.list())
+            }
             return
           }
           if (epochs.has(info.runId)) {

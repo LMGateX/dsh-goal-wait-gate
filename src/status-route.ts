@@ -45,7 +45,7 @@ let liveRow: { applyLive(config: unknown): Promise<void> } | undefined
  *
  * @param row - the mounted strategy handle.
  */
-export function publishLiveRow(row: { applyLive(config: unknown): Promise<void> }): void {
+export function publishLiveRow(row: { applyLive(config: unknown): Promise<void> } | undefined): void {
   liveRow = row
 }
 
