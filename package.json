@@ -1,6 +1,6 @@
 {
   "name": "dsh-goal-wait-gate",
-  "version": "0.4.10",
+  "version": "0.4.11",
   "description": "DSH plugin that withholds automatic goal continuation while the owning agent still has live background work",
   "type": "module",
   "license": "MIT",

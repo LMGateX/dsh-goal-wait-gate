@@ -80,6 +80,7 @@ async function acceptSavedConfig(request: RouteRequest, response: RouteResponse)
   const headers = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
   try {
     const saved = JSON.parse(await readBody(request)) as Record<string, unknown>
+    if (!STRATEGY_NAMES.includes(saved.strategy as string)) throw new Error('unknown strategy "' + String(saved.strategy) + '"')
     if (liveRow === undefined) throw new Error('this realm mounted no row')
     await liveRow.applyLive(saved)
     const status = currentGateStatus()
@@ -90,6 +91,9 @@ async function acceptSavedConfig(request: RouteRequest, response: RouteResponse)
     response.end(JSON.stringify({ ok: false, reason: String(error) }))
   }
 }
+
+/** The strategy values the row accepts, mirroring the configuration schema. */
+const STRATEGY_NAMES: readonly string[] = ['activation', 'replacement', 'native', 'off']
 
 export function registerStatusRoute(ctx: Context): void {
   ctx.inject(['webServer'], (scoped: Context) => {
