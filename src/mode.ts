@@ -197,9 +197,17 @@ class RowStrategy implements StrategyHandle {
   }
 
   applyLive(config: unknown): Promise<void> {
-    this.#live = config as RowConfigInput
+    const saved = config as RowConfigInput
+    this.#live = saved
     // A policy-only save changes nothing to mount: the policy reads the live
-    // settings, so a plain sync keeps every armed goal where it is.
+    // settings, so an unchanged strategy must not touch the driver at all.
+    // Deciding that here -- rather than inside the queued apply -- also keeps a
+    // checkpoint that is already running from re-reading the new value first.
+    try {
+      if (resolveRowConfig(saved).strategy === this.#strategy) return Promise.resolve()
+    } catch {
+      // An invalid save falls through to the queued apply, which reports it.
+    }
     return this.#enqueue(false)
   }
 
