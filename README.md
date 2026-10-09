@@ -157,6 +157,28 @@ Use a dedicated disposable DSH home/profile and a test session. Do not reload a 
 3. **Pass**: no `<goal_round>` appears while the job runs; `get_goal` shows `active` + `disarmed` and the round count unchanged; exactly one continuation round follows the completion notice.
 4. **Control**: with the plugin unmounted, the same sequence produces a `<goal_round>` within seconds.
 
+### Isolated end-to-end check
+
+The unit suite mounts the plugin in-process, where its own install layout does not
+exist. `npm run check:e2e` covers that gap: it installs the packed tarball into a
+throwaway `DSH_HOME`, boots the real server three times, and reads back which goal
+driver is live from the status record.
+
+```bash
+npm run build && npm pack --ignore-scripts
+DSH_BIN=/path/to/dsh npm run check:e2e
+```
+
+The three runs are `replacement`, `replacement --stale-peers` and `activation`. The
+middle one replays the layout that used to break this plugin: pnpm auto-installs a
+plugin's declared peers *inside its own folder*, so `@deepseek-ai/cordis@4.0.4` and
+`@deepseek-ai/dsh-agent@0.1.7-rc.2` sat beside the host's `4.0.5-alpha.1` and
+`0.2.1-alpha.1`. Reading identity from the plugin's own tree described those copies,
+no pinned host matched, and `replacement` fell back to the disarming gate - while the
+page still said `replacement`. Identity is now read from the profile's scope first
+(see `hostScopes`), and every declared peer is optional so pnpm stops installing
+stale copies at all.
+
 ## Development
 
 - `pnpm test` runs `node --test` on the TypeScript sources directly (Node's type stripping).

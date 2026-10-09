@@ -1,6 +1,6 @@
 {
   "name": "dsh-goal-wait-gate",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "DSH plugin that withholds automatic goal continuation while the owning agent still has live background work",
   "type": "module",
   "license": "MIT",
@@ -60,7 +60,8 @@
     "check:client": "node scripts/check-client.mjs",
     "check": "pnpm typecheck && pnpm test && pnpm check:hosts && pnpm check:bundle && pnpm check:settings && pnpm check:client",
     "test:legacy": "node --test test/plugin.test.ts",
-    "test:native": "node --test test/startup.test.ts test/ownership.test.ts test/host-profile.test.ts test/bundle-manifest.test.ts"
+    "test:native": "node --test test/startup.test.ts test/ownership.test.ts test/host-profile.test.ts test/bundle-manifest.test.ts",
+    "check:e2e": "node scripts/e2e-isolated.mjs --strategy replacement && node scripts/e2e-isolated.mjs --strategy replacement --stale-peers && node scripts/e2e-isolated.mjs --strategy activation"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "~3.18.4"
@@ -124,6 +125,18 @@
       "optional": true
     },
     "@deepseek-ai/dsh-subagent": {
+      "optional": true
+    },
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-agent": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-goal": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-jobs": {
       "optional": true
     }
   }
