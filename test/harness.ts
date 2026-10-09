@@ -71,6 +71,10 @@ export class FakeAgents extends Service {
 
   add(agent: FakeAgent): FakeAgent {
     this.items.set(agent.id, agent)
+    // The real registry publishes the creation before the agent can be used,
+    // and the descendant index is built from exactly that event. The payload
+    // is cast: older supported hosts declare the same event without `source`.
+    this.ctx.emit('agent/created', { agent: agent as unknown as Agent, source: 'startup' } as never)
     return agent
   }
 

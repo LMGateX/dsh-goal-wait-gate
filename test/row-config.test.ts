@@ -34,12 +34,22 @@ interface Realm {
   readonly mounted: string[]
   readonly effects: (() => unknown)[]
   readonly disposals: number[]
-  foreign(name: string): void
+  /** The realm's single live goal, read the way a test asserts on it. */
+  readonly goal: { id: string; revision: number; phase: string; activation: string; roundsStarted: number }
+  /** The owner's live jobs, which a test may add to or clear between decisions. */
+  readonly jobs: { id: string; kind: string; owner?: string; status: string }[]
+  /** How the mounted host-driver stand-in behaves, so a test can model the pinned host. */
+  readonly driver: {
+    /** The pinned host driver disarms every goal it drove when its stop runs. */
+    disarmsOnTeardown: boolean
+    /** Extra teardown work; return a promise to model a stop that never settles. */
+    onTeardown?: (() => unknown) | undefined
+  }
+  /** Mount a driver fiber that this row does not own; returns it for the watch event. */
+  foreign(name: string): unknown
   /** Dispatch one plugin checkpoint exactly as cordis would. */
   emit(event: string, payload: unknown): void
 }
-
-/** Build a stand-in context with the service and fiber shapes cordis provides. */
 
 /** The record the plugin just wrote, read the way a person would. */
 function readStatus(): GateStatus | undefined {
@@ -49,7 +59,9 @@ function readStatus(): GateStatus | undefined {
     return undefined
   }
 }
-function realm(): Realm {
+
+/** Build a stand-in context with the service and fiber shapes cordis provides. */
+function realm(options: { readonly onDriverMount?: (ctx: Context) => unknown } = {}): Realm {
   const logs: string[] = []
   const disarmed: string[] = []
   const mounted: string[] = []
@@ -57,14 +69,25 @@ function realm(): Realm {
   const disposals: number[] = []
   const fibers: { runtime?: { name?: string }; uid: number | null; parent: { fiber: unknown } }[] = []
   const agent = { id: 'agent-1', status: 'idle', session: { id: 'session-1', header: { origin: 'root' } } }
-  const jobs = {
-    list: () => [{ id: 'job-1', kind: 'task', owner: 'session-1', status: 'running' }],
+  // The owner's live jobs are realm state a test can change between decisions.
+  const jobs = [{ id: 'job-1', kind: 'task', owner: 'session-1', status: 'running' }]
+  const jobService = {
+    list: () => jobs.map(job => ({ ...job })),
     events: { subscribe: () => () => {} },
   }
   const sessions = { flush: async () => {} }
-  const goal = { id: 'goal-1', revision: 3, phase: 'active', activation: 'armed' }
+  const goal = { id: 'goal-1', revision: 3, phase: 'active', activation: 'armed', roundsStarted: 0 }
   const handlers = new Map<string, ((payload: never) => void)[]>()
   const fiber = { parent: undefined as { fiber: unknown } | undefined, uid: 1 }
+  /**
+   * How the mounted host-driver stand-in behaves. The pinned host driver
+   * disarms every goal it drove when its stop runs, and a test may also model
+   * an official edit landing mid-switch or a stop that never settles.
+   */
+  const driver: Realm['driver'] = { disarmsOnTeardown: false }
+  const emit = (event: string, payload: unknown): void => {
+    for (const handler of handlers.get(event) ?? []) handler(payload as never)
+  }
   const ctx = {
     fiber,
     logger: {
@@ -82,9 +105,9 @@ function realm(): Realm {
       disarm: () => { goal.activation = 'disarmed'; disarmed.push('disarm') },
       resume: () => { goal.activation = 'armed'; disarmed.push('resume') },
     },
-    jobs,
+    jobs: jobService,
     sessions,
-    get: (name: string) => (name === 'jobs' ? jobs : name === 'sessions' ? sessions : undefined),
+    get: (name: string) => (name === 'jobs' ? jobService : name === 'sessions' ? sessions : undefined),
     on: (event: string, handler: (payload: never) => void) => {
       const list = handlers.get(event) ?? []
       list.push(handler)
@@ -98,8 +121,21 @@ function realm(): Realm {
       const child: { runtime?: { name?: string }; uid: number | null; parent: { fiber: unknown } } = { runtime: { name: plugin.name }, uid: 2, parent: { fiber } }
       fibers.push(child)
       mounted.push(String(plugin.name))
+      // Cordis publishes every fiber through internal/plugin; the row watches
+      // those events, so the stand-in publishes its children the same way.
+      emit('internal/plugin', child)
+      // A test may model what the pinned host driver does once it is mounted.
+      const stopDriver = plugin.name === NATIVE_DRIVER_NAME ? options.onDriverMount?.(ctx as unknown as Context) : undefined
       const childFiber = {
-        dispose: async () => { child.uid = null; disposals.push(1) },
+        dispose: async () => {
+          child.uid = null
+          disposals.push(1)
+          if (typeof stopDriver === 'function') (stopDriver as () => void)()
+          if (plugin.name === NATIVE_DRIVER_NAME) {
+            if (driver.disarmsOnTeardown) goal.activation = 'disarmed'
+            await driver.onTeardown?.()
+          }
+        },
         parent: { fiber },
       }
       return Object.assign(Promise.resolve(childFiber), { dispose: childFiber.dispose })
@@ -113,12 +149,15 @@ function realm(): Realm {
     mounted,
     effects,
     disposals,
+    goal,
+    jobs,
+    driver,
     foreign(name: string) {
-      fibers.push({ runtime: { name }, uid: 3, parent: { fiber: { uid: 99 } } })
+      const intruder = { runtime: { name }, uid: 3, parent: { fiber: { uid: 99 } } }
+      fibers.push(intruder)
+      return intruder
     },
-    emit(event: string, payload: unknown) {
-      for (const handler of handlers.get(event) ?? []) handler(payload as never)
-    },
+    emit,
   }
 }
 
@@ -358,5 +397,149 @@ test('a live policy change applies at the next evaluation without a remount', as
   space.emit('agent/turn-stopping', { agent: space.ctx.agents.list()[0] })
   assert.deepEqual(space.disarmed, ['disarm', 'resume'], 'the saved waitForJobs change did not apply at the next evaluation')
   assert.deepEqual(space.mounted, [NATIVE_DRIVER_NAME], 'a policy change must not remount the driver')
+})
+
+test('a policy-only save never remounts the driver and leaves an armed goal armed', async () => {
+  const space = realm()
+  space.jobs.length = 0 // no live work: the mounted policy holds nothing
+  let strategy: Strategy = 'activation'
+  const live = {
+    strategy: { get: () => strategy },
+    waitForJobs: { get: () => true },
+    waitForSubagents: { get: () => true },
+    maxHoldMs: { get: () => 0 },
+  }
+  const handle = await applyStrategy(space.ctx, live, { importNativeDriver: async () => nativeStandIn })
+  assert.equal(space.goal.activation, 'armed', 'an armed goal with no live work must be left alone')
+  assert.deepEqual(space.disarmed, [], 'the gate held nothing')
+  assert.deepEqual(space.mounted, [NATIVE_DRIVER_NAME])
+
+  // The page saves the mounted strategy with one policy field changed.
+  await handle.applyLive({ strategy: 'activation', waitForJobs: false })
+  assert.deepEqual(space.mounted, [NATIVE_DRIVER_NAME], 'a policy-only save remounted the driver')
+  assert.equal(space.disposals.length, 0, 'a policy-only save disposed a driver')
+  assert.equal(space.goal.activation, 'armed')
+
+  // The saved policy is what the next decision reads, still without a remount.
+  space.jobs.push({ id: 'job-2', kind: 'task', owner: 'session-1', status: 'running' })
+  space.emit('agent/turn-stopping', { agent: space.ctx.agents.list()[0] })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(space.goal.activation, 'armed', 'the saved waitForJobs=false did not apply')
+  assert.deepEqual(space.disarmed, [], 'the gate withheld continuation on the stale policy')
+  assert.deepEqual(space.mounted, [NATIVE_DRIVER_NAME], 'a checkpoint remounted the driver')
+  for (const cleanup of space.effects) cleanup()
+})
+
+test('a strategy switch re-arms the goal its teardown disarmed and keeps the next round queued', async () => {
+  const space = realm({
+    onDriverMount: ctx => ctx.on('agent/status', ({ status }) => {
+      if (status !== 'idle') return
+      // What the freshly mounted official driver does at idle: claim the next
+      // round of an active armed goal. A goal the switch left disarmed claims
+      // nothing, and the goal round silently ends.
+      if (space.goal.phase === 'active' && space.goal.activation === 'armed' && space.goal.roundsStarted === 0) space.goal.roundsStarted = 1
+    }),
+  })
+  space.jobs.length = 0
+  space.driver.disarmsOnTeardown = true // the pinned host driver disarms in stop()
+  let strategy: Strategy = 'activation'
+  const live = {
+    strategy: { get: () => strategy },
+    waitForJobs: { get: () => true },
+    waitForSubagents: { get: () => true },
+    maxHoldMs: { get: () => 0 },
+  }
+  const handle = await applyStrategy(space.ctx, live, { importNativeDriver: async () => nativeStandIn })
+  assert.equal(space.goal.activation, 'armed')
+  assert.deepEqual(space.disarmed, [])
+
+  strategy = 'native'
+  await handle.sync()
+  assert.equal(handle.current(), 'native')
+  assert.equal(space.goal.activation, 'armed', 'the teardown disarmed the goal and the switch did not re-arm it')
+  assert.deepEqual(space.disarmed, ['resume'], 'the switch did not resume exactly the goal the teardown disarmed')
+
+  // The driver the switch mounted finds the armed goal at its next idle edge.
+  space.emit('agent/status', { agent: space.ctx.agents.list()[0], status: 'idle' })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(space.goal.roundsStarted, 1, 'the next goal round was not queued')
+  for (const cleanup of space.effects) cleanup()
+})
+
+test('a switch does not resume a revision an official edit changed while it ran', async () => {
+  const space = realm()
+  space.jobs.length = 0
+  space.driver.disarmsOnTeardown = true
+  let strategy: Strategy = 'native'
+  const live = {
+    strategy: { get: () => strategy },
+    waitForJobs: { get: () => true },
+    waitForSubagents: { get: () => true },
+    maxHoldMs: { get: () => 0 },
+  }
+  const handle = await applyStrategy(space.ctx, live, { importNativeDriver: async () => nativeStandIn })
+  assert.equal(space.goal.activation, 'armed', 'the native strategy leaves goals alone')
+
+  // An official edit commits a new revision while the switch is tearing down.
+  space.driver.onTeardown = () => { space.goal.revision += 1 }
+  strategy = 'activation'
+  await handle.sync()
+  assert.deepEqual(space.disarmed, [], 'a goal edited mid-switch must not be resumed with a stale ref')
+  assert.equal(space.goal.activation, 'disarmed', 'the revised goal keeps whatever state the edit left')
+  for (const cleanup of space.effects) cleanup()
+})
+
+test('a driver whose stop never settles cannot block a sync or a later save', async () => {
+  const space = realm()
+  space.driver.onTeardown = () => new Promise<void>(() => {})
+  let strategy: Strategy = 'activation'
+  const live = {
+    strategy: { get: () => strategy },
+    waitForJobs: { get: () => false },
+    waitForSubagents: { get: () => false },
+    maxHoldMs: { get: () => 0 },
+  }
+  const handle = await applyStrategy(space.ctx, live, {
+    importNativeDriver: async () => nativeStandIn,
+    teardownTimeoutMs: 20,
+  })
+  assert.equal(handle.current(), 'activation')
+
+  strategy = 'native'
+  const started = Date.now()
+  await handle.sync()
+  assert.equal(handle.current(), 'native', 'the switch did not apply')
+  assert.ok(Date.now() - started < 1000, 'the hanging teardown pinned the serialized queue')
+
+  // A later call still applies a strategy change.
+  await handle.applyLive({ strategy: 'off' })
+  assert.equal(handle.current(), 'off', 'a later save did not apply')
+  assert.equal(space.goal.activation, 'disarmed', 'the off strategy withholds unconditionally')
+  await handle.dispose()
+})
+
+test('a driver mounted after this row stands the row down instead of driving twice', async () => {
+  const space = await applyStrategyOn({ strategy: 'activation' })
+  assert.deepEqual(space.disarmed, ['disarm'], 'the gate holds for the live job')
+  assert.deepEqual(space.mounted, [NATIVE_DRIVER_NAME])
+  assert.equal(foreignDriverActive(space.ctx), false, 'our own child counts as foreign')
+
+  // The host's own row appears after ours; the one-shot probe at mount could
+  // not have seen it.
+  const intruder = space.foreign(NATIVE_DRIVER_NAME)
+  assert.equal(foreignDriverActive(space.ctx), true)
+  space.emit('internal/plugin', intruder)
+  await new Promise(resolve => setImmediate(resolve))
+
+  assert.equal(space.logs.filter(line => line.includes('mounted after')).length, 1, 'the second driver was not reported')
+  assert.deepEqual(space.disposals, [1], 'the row did not tear its own driver down')
+  assert.deepEqual(space.disarmed, ['disarm', 'resume'], 'the hold this row owned must go to the new driver')
+  assert.equal(space.goal.activation, 'armed')
+
+  // A later checkpoint must not remount a driver: the row stays inert.
+  space.emit('agent/turn-stopping', { agent: space.ctx.agents.list()[0] })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(space.mounted.length, 1, 'the row remounted a driver after standing down')
+  for (const cleanup of space.effects) cleanup()
 })
 

@@ -8,6 +8,46 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-jobs'
 
 /**
+ * Live subagent-origin agents by declared parent session id, one per realm.
+ *
+ * The gate evaluates every checkpoint — twice per turn and agent — so
+ * rebuilding this map from the whole registry on each call paid Theta(A^2)
+ * allocations to answer a question about one chain. The index is seeded from
+ * the registry the first time a realm asks and then maintained by the
+ * lifecycle events the host already emits. A disposal drops the seed, because
+ * a removed node can sit anywhere in any chain and re-seeding from the live
+ * registry is always exact.
+ */
+interface DescendantIndex {
+  readonly children: Map<string, Set<Agent>>
+  seeded: boolean
+}
+
+const indexes = new WeakMap<Context, DescendantIndex>()
+
+/** The index for one realm, subscribing to the lifecycle the first time it is asked. */
+function indexFor(ctx: Context): DescendantIndex {
+  const existing = indexes.get(ctx)
+  if (existing !== undefined) return existing
+  const index: DescendantIndex = { children: new Map(), seeded: false }
+  indexes.set(ctx, index)
+  ctx.on('agent/created', ({ agent }): undefined => { indexChild(index, agent) })
+  // A disposal is the one change a set of live children cannot absorb: the
+  // disposed agent may be any node of any chain, so the index is rebuilt.
+  ctx.on('agent/disposed', () => { index.seeded = false })
+  return index
+}
+
+/** Add one live subagent descendant under the session its header names. */
+function indexChild(index: DescendantIndex, agent: Agent): void {
+  const { parentSession, origin } = agent.session.header
+  if (parentSession === undefined || origin !== 'subagent') return
+  const bucket = index.children.get(parentSession)
+  if (bucket === undefined) index.children.set(parentSession, new Set([agent]))
+  else bucket.add(agent)
+}
+
+/**
  * Whether the session owns any live subagent descendant at any depth.
  *
  * Liveness is the live agent registry, not the durable child catalog: a
@@ -25,13 +65,11 @@ import type {} from '@deepseek-ai/dsh-jobs'
  * let the official driver inject a round before that notice is consumed.
  */
 export function hasLiveSubagents(ctx: Context, agent: Agent): boolean {
-  const childrenByParent = new Map<string, Agent[]>()
-  for (const candidate of ctx.agents.list()) {
-    const { parentSession, origin } = candidate.session.header
-    if (parentSession === undefined || origin !== 'subagent') continue
-    const siblings = childrenByParent.get(parentSession)
-    if (siblings === undefined) childrenByParent.set(parentSession, [candidate])
-    else siblings.push(candidate)
+  const index = indexFor(ctx)
+  if (!index.seeded) {
+    index.children.clear()
+    for (const live of ctx.agents.list()) indexChild(index, live)
+    index.seeded = true
   }
 
   const visited = new Set<string>()
@@ -39,8 +77,11 @@ export function hasLiveSubagents(ctx: Context, agent: Agent): boolean {
   while (pending.length > 0) {
     const parentId = pending.pop()
     if (parentId === undefined) continue
-    for (const child of childrenByParent.get(parentId) ?? []) {
+    for (const child of index.children.get(parentId) ?? []) {
       if (visited.has(child.id)) continue
+      // An entry survives its agent until the disposal event invalidates the
+      // index; never count one the live registry no longer knows.
+      if (ctx.agents.get(child.id) !== child) continue
       visited.add(child.id)
       pending.push(String(child.session.id))
     }

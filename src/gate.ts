@@ -52,6 +52,21 @@ export class GoalWaitGate {
     }
   }
 
+  /**
+   * Whether this gate disarmed exactly this goal and still owns the hold.
+   *
+   * A strategy switch tears this gate down, so the row asks before a teardown
+   * which goals the hold is keeping armed, and after a mount whether the new
+   * gate has already claimed a goal it must not re-arm.
+   *
+   * @param agent - the live agent the hold belongs to.
+   * @param goalId - the goal identity the hold recorded.
+   * @returns whether the recorded hold is exactly this goal.
+   */
+  holds(agent: Agent, goalId: string): boolean {
+    return this.#heldGoals.get(agent) === goalId
+  }
+
   /** Drop all bookkeeping for one agent that is no longer live. */
   forget(agent: Agent): void {
     this.#heldGoals.delete(agent)

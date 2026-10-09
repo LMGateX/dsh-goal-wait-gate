@@ -434,3 +434,41 @@ test('the plugin mounts and unloads on a live context', async () => {
   await harness.unload()
   await harness.dispose()
 })
+
+test('a child created after an evaluation is indexed, and its disposal releases', async () => {
+  const harness = await createHarness({ config: { waitForJobs: false } })
+  const parent = harness.agent('parent')
+  harness.goal(parent)
+
+  // The first evaluation seeds the descendant index from the live registry.
+  await harness.turnStopping(parent)
+  assert.equal(harness.goals.byKind('disarm').length, 0, 'no child exists yet')
+
+  // A child registered afterwards must hold at the very next evaluation.
+  harness.agent('child-1', { parent: parent.session.id })
+  await harness.turnStopping(parent)
+  assert.equal(harness.goals.byKind('disarm').length, 1, 'a child created after the first evaluation was missed')
+
+  // A disposal invalidates the index, so the release is seen as well.
+  harness.agents.drop('child-1')
+  await harness.turnStopping(parent)
+  assert.equal(harness.goals.byKind('resume').length, 1, 'the child disposal was not seen')
+  assert.equal(harness.goals.peek(parent)?.activation, 'armed')
+
+  await harness.dispose()
+})
+
+test('an evaluation with an unchanged realm does not rescan the agent registry', async () => {
+  const harness = await createHarness({ config: { waitForJobs: false } })
+  const parent = harness.agent('parent')
+  harness.goal(parent)
+  await harness.turnStopping(parent) // seeds the index
+
+  let scans = 0
+  const list = harness.agents.list.bind(harness.agents)
+  harness.agents.list = () => { scans += 1; return list() }
+  await harness.turnStopping(parent)
+  assert.equal(scans, 0, 'the descendant index was rebuilt instead of reused')
+
+  await harness.dispose()
+})

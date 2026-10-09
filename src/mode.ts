@@ -54,6 +54,8 @@ export interface StrategyOptions {
   readonly detectHost?: (ctx: Context) => Promise<{ distribution: string; driver: { removeCancelledQueuedMessage: boolean } }>
   /** How long a child mount may stay pending before it is reported, in ms. */
   readonly mountTimeoutMs?: number
+  /** How long one child teardown may hold the serialized apply queue, in ms. */
+  readonly teardownTimeoutMs?: number
 }
 
 /** A mounted row: what is driving now, and how to follow a saved change. */
@@ -171,6 +173,14 @@ class RowStrategy implements StrategyHandle {
   #strategy: Strategy | undefined
   #queue: Promise<void> = Promise.resolve()
   #closed = false
+  /**
+   * A goal-round driver this plugin does not own mounted after this row.
+   *
+   * Latched: the composition no longer matches what this row mounted for, so
+   * it stays inert for the rest of its lifetime instead of racing the driver
+   * the host just published.
+   */
+  #foreign = false
 
   constructor(ctx: Context, config: RowConfig | RowConfigInput, options: StrategyOptions) {
     this.#ctx = ctx
@@ -185,6 +195,11 @@ class RowStrategy implements StrategyHandle {
     }, { prepend: true })
     ctx.on('goal/changed', ({ agent }) => this.#checkpoint(agent), { prepend: true })
     ctx.on('agent/disposed', ({ agent }) => this.#gate?.forget(agent))
+    // A one-shot probe cannot see a driver that mounts after this row, and two
+    // drivers would race for the same goal. Watch every plugin mount for this
+    // row's lifetime, as the startup owner already does, and stand down the
+    // moment the host's own row appears.
+    ctx.on('internal/plugin', (fiber: Fiber) => this.#watchIntruder(fiber), { global: true })
     ctx.effect(() => () => this.#close(), 'goal-wait-gate teardown')
   }
 
@@ -243,31 +258,49 @@ class RowStrategy implements StrategyHandle {
 
   /** Bring the mounted driver in line with the live configuration. */
   async #apply(force = false): Promise<void> {
-    if (this.#closed) return
+    if (this.#closed || this.#foreign) return
     const config = resolveRowConfig(this.#live ?? this.#config)
     if (!force && this.#strategy === config.strategy) return
-    // Tearing a driver down disarms every goal it drove, and nothing in the
-    // host re-arms one by itself: remember what was running so the switch does
-    // not silently end goal continuation.
-    const held = this.#captureArmed()
+    // A switch tears a driver down, and a teardown disarms every goal it drove:
+    // nothing in the host re-arms one by itself, so remember what was running.
+    // The first mount tears nothing down and owes no goal anything; restoring
+    // there would undo the hold this very mount records.
+    const held = this.#strategy === undefined ? [] : this.#captureArmed()
     await this.#teardown()
     if (this.#closed) return
+    if (this.#foreign) {
+      // Stood down mid-switch: the teardown may have disarmed goals this row
+      // was holding, and the foreign driver must find them armed.
+      this.#resumeHeld(held)
+      return
+    }
     this.#strategy = config.strategy
     await this.#mount(config)
     this.#resumeHeld(held)
+    if (this.#foreign) this.#strategy = undefined
   }
 
-  /** Goals that were active and armed before a switch, by identity and revision. */
+  /** Goals that must survive a switch armed, by identity and revision. */
   #captureArmed(): { agent: Agent; id: string; revision: number }[] {
     const held: { agent: Agent; id: string; revision: number }[] = []
     for (const agent of this.#ctx.agents.list()) {
       const goal = this.#ctx.goals.get(agent)
-      if (goal !== undefined && goal.phase === 'active' && goal.activation === 'armed') held.push({ agent, id: goal.id, revision: goal.revision })
+      if (goal === undefined || goal.phase !== 'active') continue
+      // A goal this row's gate disarmed was armed before the row held it, and
+      // the hold dies with the gate: the switch owes that goal the armed state.
+      if (goal.activation !== 'armed' && this.#gate?.holds(agent, goal.id) !== true) continue
+      held.push({ agent, id: goal.id, revision: goal.revision })
     }
     return held
   }
 
-  /** Resume exactly the goals the capture identified and that are still there, disarmed. */
+  /**
+   * Re-arm exactly the goals the capture identified and that are still there,
+   * disarmed, at the captured revision.
+   *
+   * The gate this switch just mounted is the new authority: a goal it has
+   * already recorded as held must not be re-armed here.
+   */
   #resumeHeld(held: readonly { agent: Agent; id: string; revision: number }[]): void {
     for (const item of held) {
       if (this.#ctx.agents.get(item.agent.id) !== item.agent) continue
@@ -275,6 +308,7 @@ class RowStrategy implements StrategyHandle {
         const goal = this.#ctx.goals.get(item.agent)
         if (goal === undefined || goal.id !== item.id || goal.revision !== item.revision) continue
         if (goal.phase !== 'active' || goal.activation !== 'disarmed') continue
+        if (this.#gate?.holds(item.agent, goal.id) === true) continue
         this.#ctx.goals.resume(item.agent, { id: goal.id, revision: goal.revision })
       } catch (error) {
         this.#ctx.logger.warn(`goal-wait-gate: could not resume goal ${item.id} after the switch: ${messageOf(error)}`)
@@ -284,6 +318,7 @@ class RowStrategy implements StrategyHandle {
 
   /** Mount what one strategy needs, recording every child for the next teardown. */
   async #mount(config: ResolvedRowConfig): Promise<void> {
+    if (this.#foreign) return
     if (config.strategy === 'off') {
       this.#mountGate(config, true)
       this.#ctx.logger.info('goal-wait-gate: strategy=off — no driver is mounted, so no goal continues automatically until this plugin is switched off or uninstalled')
@@ -299,7 +334,7 @@ class RowStrategy implements StrategyHandle {
     if (gated) this.#mountGate(config, false)
     const mounted = await this.#mountDriver(config)
     if (!mounted) return
-    const snapshot = resolveRowConfig(this.#config)
+    const snapshot = resolveRowConfig(this.#live ?? this.#config)
     this.#ctx.logger.info(`goal-wait-gate: strategy=${config.strategy} — ${describe(snapshot, gated)} (waitForJobs=${snapshot.waitForJobs}, waitForSubagents=${snapshot.waitForSubagents}, maxHoldMs=${snapshot.maxHoldMs})`)
   }
 
@@ -327,7 +362,9 @@ class RowStrategy implements StrategyHandle {
   /** The gate policy as it stands right now; a bad saved value keeps the last good shape. */
   #policy(alwaysHold: boolean, mounted: ResolvedRowConfig): ResolvedGateConfig {
     try {
-      const live = resolveRowConfig(this.#config)
+      // `#live` is the save the page handed back: a settings-document write
+      // does not push the new value back into the row's own config accessors.
+      const live = resolveRowConfig(this.#live ?? this.#config)
       return { waitForJobs: live.waitForJobs, waitForSubagents: live.waitForSubagents, maxHoldMs: live.maxHoldMs, alwaysHold }
     } catch (error) {
       this.#ctx.logger.error(`goal-wait-gate: ignoring an invalid saved policy (${messageOf(error)})`)
@@ -370,14 +407,14 @@ class RowStrategy implements StrategyHandle {
         return false
       }
       // Captured for the child closure: the child's own `this` is not this row.
-      const rowConfig = this.#config
+      const row = this
       const child = ctx.plugin({
         name: REPLACEMENT_DRIVER_NAME,
         inject: ['agents', 'goals', 'sessions', 'jobs'],
         apply(driverCtx: Context) {
           const driver = installNativeDriver(driverCtx, createBackgroundPolicy(driverCtx, () => {
             try {
-              const live = resolveRowConfig(rowConfig)
+              const live = resolveRowConfig(row.#live ?? row.#config)
               return { waitForJobs: live.waitForJobs, waitForSubagents: live.waitForSubagents }
             } catch {
               return { waitForJobs: config.waitForJobs, waitForSubagents: config.waitForSubagents }
@@ -388,11 +425,12 @@ class RowStrategy implements StrategyHandle {
       }) as unknown as Fiber
       this.#drivers.push(child)
       const outcome = await settleMount(child, options)
-      if (this.#closed) {
-        // The row closed while this child was still mounting: dispose it here,
-        // or it would drive goals with nobody left to tear it down.
+      if (this.#closed || this.#foreign) {
+        // The row closed or stood down while this child was still mounting:
+        // dispose it here, or it would drive goals with nobody left to tear it
+        // down.
         this.#drivers.splice(this.#drivers.indexOf(child), 1)
-        void settleDispose(child)
+        void settleDispose(child, options.teardownTimeoutMs)
         return true
       }
       if (outcome === 'failed') {
@@ -425,6 +463,12 @@ class RowStrategy implements StrategyHandle {
     // defers a mount until its dependencies exist, and waiting for that is not
     // something this row may impose on the whole composition.
     const fiber = ctx.plugin(native) as unknown as Fiber
+    if (this.#closed || this.#foreign) {
+      // The row closed or stood down while the host module was loading: the
+      // child must not stay live, or two drivers would race for one goal.
+      void settleDispose(fiber, options.teardownTimeoutMs)
+      return false
+    }
     this.#drivers.push(fiber)
     watchMount(ctx, fiber, 'the host goal-round driver', options)
     this.#record(config.strategy, config.strategy === 'activation' ? 'host-driver+gate' : 'host-driver')
@@ -469,7 +513,7 @@ class RowStrategy implements StrategyHandle {
     this.#gate = undefined
     this.#strategy = undefined
     gate?.dispose()
-    for (const driver of drivers) await settleDispose(driver)
+    for (const driver of drivers) await settleDispose(driver, this.#options.teardownTimeoutMs)
   }
 
   /** Close the row: the gate re-arms its holds, the children are disposed. */
@@ -483,7 +527,39 @@ class RowStrategy implements StrategyHandle {
     // A closed row must not stay reachable: a late POST would answer ok:true.
     publishLiveRow(undefined)
     gate?.dispose()
-    for (const driver of drivers) void settleDispose(driver)
+    for (const driver of drivers) void settleDispose(driver, this.#options.teardownTimeoutMs)
+  }
+
+  /**
+   * One plugin mount: another goal-round driver after this row means
+   * continuation is no longer this row's to drive.
+   *
+   * @param fiber - the fiber cordis just published.
+   */
+  #watchIntruder(fiber: Fiber): void {
+    if (fiber.uid === null || fiber.runtime?.name !== NATIVE_DRIVER_NAME) return
+    if (ownedByUs(this.#ctx, fiber)) return
+    this.#standDown()
+  }
+
+  /**
+   * Stop driving because a foreign goal-round driver mounted after this row.
+   *
+   * The latch is permanent for this row's lifetime: re-mounting at the next
+   * checkpoint would race the driver the host just published. The gate is
+   * disposed, which re-arms the holds it owned, so the new owner finds the
+   * goals it is expected to drive.
+   */
+  #standDown(): void {
+    if (this.#foreign || this.#closed) return
+    this.#foreign = true
+    this.#ctx.logger.error('goal-wait-gate: another goal-round driver was mounted after this row; this row stops driving so a goal is never driven twice')
+    const drivers = this.#drivers.splice(0, this.#drivers.length)
+    const gate = this.#gate
+    this.#gate = undefined
+    this.#strategy = undefined
+    gate?.dispose()
+    for (const driver of drivers) void settleDispose(driver, this.#options.teardownTimeoutMs)
   }
 }
 

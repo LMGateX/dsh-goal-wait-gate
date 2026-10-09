@@ -52,7 +52,9 @@ test('the status route serves what the plugin last recorded', () => {
   registerStatusRoute(ctx as unknown as Context)
   let body = ''
   assert.ok(handler, 'the route was not registered')
-  handler(undefined, { writeHead: () => {}, end: (value: string) => { body = value } })
+  // A GET, the shape a browser reader sends; the handler now reads the method
+  // to tell a save POST from a status read.
+  handler({ method: 'GET' }, { writeHead: () => {}, end: (value: string) => { body = value } })
   assert.equal(JSON.parse(body).mounted, 'replacement-port')
   assert.equal(JSON.parse(body).host.distribution, '0.2.1-alpha.2')
 })
