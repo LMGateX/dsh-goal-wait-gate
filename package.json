@@ -51,7 +51,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node scripts/copy-driver-assets.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node --test \"test/**/*.test.ts\"",
+    "test": "node --import ./test/scratch-home.ts --test \"test/**/*.test.ts\"",
     "prepack": "node node_modules/typescript/lib/tsc.js -p tsconfig.build.json && node scripts/copy-driver-assets.ts",
     "check:hosts": "node scripts/check-host-compat.mjs",
     "check:startup-host": "node scripts/check-startup-host.ts",
