@@ -310,9 +310,10 @@ window.__ModuleLoader__.load({
         /** How each mounted driver reads on the card, and which tone it carries. */
         const DRIVER_LABELS = {
             'replacement-port': { text: '本插件移植驱动', tone: 'Ok' },
-            'host-driver+gate': { text: '宿主驱动＋闸门（已回退）', tone: 'Warn' },
+            'host-driver+gate': { text: '宿主驱动＋闸门', tone: 'Ok' },
             'host-driver': { text: '宿主原生驱动', tone: 'Muted' },
             'none': { text: '未挂载任何驱动', tone: 'Warn' },
+            'off': { text: '不挂载驱动（off 策略）', tone: 'Muted' },
         };
         /**
          * Read the published status while the editor is open.
@@ -425,11 +426,16 @@ window.__ModuleLoader__.load({
             function driverStatusLine(status) {
                 if (status === undefined) return null;
                 const answer = status !== null && typeof status === 'object' ? status : undefined;
-                const known = answer === undefined ? undefined : DRIVER_LABELS[answer.mounted];
-                const tone = known === undefined ? 'Muted' : known.tone;
-                const label = known === undefined ? '尚未记录（插件可能还在启动）' : known.text;
+                // A fallback is the only case that is not what the row was asked to
+                // mount: activation deliberately mounts the host driver beside the
+                // gate, and off deliberately mounts nothing at all.
+                const fellBack = answer !== undefined && typeof answer.fallback === 'string';
+                const chosen = answer !== undefined && answer.requested === 'off' && answer.mounted === 'none' ? DRIVER_LABELS.off : (answer === undefined ? undefined : DRIVER_LABELS[answer.mounted]);
+                const tone = fellBack ? 'Warn' : (chosen === undefined ? 'Muted' : chosen.tone);
+                const base = chosen === undefined ? '尚未记录（插件可能还在启动）' : chosen.text;
+                const label = fellBack ? base + '（已回退）' : base;
                 const host = answer !== undefined && answer.host !== null && typeof answer.host === 'object' && typeof answer.host.distribution === 'string' ? '（宿主 ' + answer.host.distribution + '）' : '';
-                const reason = answer !== undefined && typeof answer.fallback === 'string' ? '：' + answer.fallback : '';
+                const reason = fellBack ? '：' + answer.fallback : '';
                 return h('p', { style: Object.assign({}, styles.statusLine, styles['status' + tone]), role: 'status' }, '当前驱动：' + label + host + reason);
             }
             /**
