@@ -18,16 +18,27 @@
 import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import semver from 'semver'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const DEFAULT_HOSTS = ['0.1.7-alpha.2', '0.1.7-rc.2', '0.2.0-rc.2']
+const DEFAULT_HOSTS = ['0.1.7-alpha.2', '0.1.7-rc.2', '0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-alpha.2']
 const HOSTS = process.argv.slice(2).length > 0 ? process.argv.slice(2) : DEFAULT_HOSTS
-const DSH_PACKAGES = ['@deepseek-ai/dsh-agent', '@deepseek-ai/dsh-goal', '@deepseek-ai/dsh-jobs']
+const DSH_PACKAGES = [
+  '@deepseek-ai/dsh-agent',
+  '@deepseek-ai/dsh-goal',
+  '@deepseek-ai/dsh-goal-round-driver',
+  '@deepseek-ai/dsh-jobs',
+  '@deepseek-ai/dsh-llm',
+  '@deepseek-ai/dsh-scope',
+  '@deepseek-ai/dsh-session',
+  '@deepseek-ai/dsh-settings',
+  '@deepseek-ai/dsh-subagent',
+]
 const CORDIS_VERSION = '4.0.4'
-const WORK = join(ROOT, '.host-compat')
+const WORK = join(tmpdir(), 'dsh-goal-wait-gate-host-compat')
 const TSC = join(ROOT, 'node_modules', '.bin', 'tsc')
 
 const run = (command, args, cwd) => {
@@ -56,6 +67,7 @@ for (const host of HOSTS) {
     dependencies: Object.fromEntries([
       ['@deepseek-ai/cordis', CORDIS_VERSION],
       ...DSH_PACKAGES.map((name) => [name, host]),
+      ['@deepseek-ai/schemastery', pkg.dependencies['@deepseek-ai/schemastery'] ?? '~3.18.4'],
       ['@types/node', '^24.0.0'],
     ]),
   }
@@ -78,7 +90,7 @@ for (const host of HOSTS) {
   const tsconfigPath = join(hostDirectory, 'tsconfig.json')
   writeFileSync(
     tsconfigPath,
-    JSON.stringify({ extends: '../../tsconfig.json', include: ['src/index.ts', 'test/plugin.test.ts', 'test/harness.ts'] }, null, 2) + '\n',
+    JSON.stringify({ extends: join(ROOT, 'tsconfig.json'), include: ['src/index.ts', 'test/plugin.test.ts', 'test/harness.ts'] }, null, 2) + '\n',
   )
 
   // Prove the copy can only reach its own node_modules before trusting the typecheck.

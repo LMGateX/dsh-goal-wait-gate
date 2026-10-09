@@ -2,7 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-jobs'
-import type { SubagentRunId } from '@deepseek-ai/dsh-subagent'
+import type { SubagentRunId, SubagentRunInfo } from '@deepseek-ai/dsh-subagent'
 import type { DriverPolicy } from './native-driver.ts'
 
 export interface BackgroundConfig { waitForJobs?: boolean; waitForSubagents?: boolean }
@@ -56,16 +56,34 @@ export function createBackgroundPolicy(ctx: Context, config: BackgroundConfig = 
         })
       }))
       if (config.waitForSubagents !== false) {
-        stops.push(ctx.on('subagent/start', info => {
-          if (closed || !info.local) return // Nonlocal runs are supported only through standard owned Jobs.
+        /**
+         * One activation started.
+         *
+         * The emit carries the owning parent as its second argument, and that is
+         * the only lineage an external activation has: from 0.2.1-alpha.2 on, a run
+         * started by an external provider owns no local Agent and is not an owned
+         * Job either, so the child session cannot resolve a chain. The declared
+         * listener signature has one parameter, hence the rest-args shape.
+         */
+        const onStart = (...args: unknown[]): void => {
+          const info = args[0] as SubagentRunInfo
+          const parent = args[1] as Agent | undefined
+          if (closed) return
           const child = ctx.agents.get(info.id)
-          const chain = child === undefined ? [] : ancestors(child)
-          if (child === undefined || chain.length === 0 || epochs.has(info.runId)) {
+          const childChain = child === undefined ? [] : ancestors(child)
+          const chain = childChain.length > 0
+            ? childChain
+            : parent !== undefined && ctx.agents.get(parent.id) === parent ? [parent] : []
+          // An activation this realm cannot place stays unobserved here; hosts
+          // before 0.2.1-alpha.2 still report those runs as owned Jobs below.
+          if (chain.length === 0) return
+          if (epochs.has(info.runId)) {
             unavailable = true; notify(ctx.agents.list()); return
           }
           epochs.set(info.runId, chain)
           notify(chain)
-        }))
+        }
+        stops.push(ctx.on('subagent/start', onStart))
         stops.push(ctx.on('subagent/end', info => {
           const chain = epochs.get(info.runId)
           if (chain === undefined || closed) return

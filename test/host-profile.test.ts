@@ -16,6 +16,7 @@ const profileFor = (distribution: string): HostProfile => {
 }
 const rc2 = profileFor('0.2.0-rc.2')
 const alpha = profileFor('0.2.1-alpha.1')
+const alpha2 = profileFor('0.2.1-alpha.2')
 
 /** Pinned profile of the host this suite really runs on; the same suite must pass on each. */
 function detectInstalledProfile(): HostProfile {
@@ -81,7 +82,7 @@ test('artifact identity selects the exact ported behavior of that pinned host', 
 })
 
 test('an unpinned distribution version is refused instead of borrowing a port', () => {
-  assert.throws(() => matchHostProfile(facts(alpha, { '@deepseek-ai/dsh-goal-round-driver': '0.2.1-alpha.2' })), /unsupported.*0\.2\.1-alpha\.2/)
+  assert.throws(() => matchHostProfile(facts(alpha, { '@deepseek-ai/dsh-goal-round-driver': '0.2.2-alpha.0' })), /unsupported.*0\.2\.2-alpha\.0/)
 })
 
 test('a matching version without the exact bundle fingerprint is refused', () => {
@@ -120,8 +121,25 @@ test('a pinned 0.2.1-alpha.1 identity is detected and retires the unclaimed queu
   } finally { t.mock.restoreAll(); syncBuiltinESMExports(); await h.dispose() }
 })
 
+test('a pinned 0.2.1-alpha.2 identity is detected and retires the unclaimed queued round', async t => {
+  simulateHost(t, alpha2)
+  const h = await new NativeFixture().initialize()
+  try {
+    assert.equal(getStartupState(h.ctx)?.host?.distribution, '0.2.1-alpha.2')
+    assert.equal(getStartupState(h.ctx)?.host?.driverSha256, alpha2.driverSha256)
+    // The distribution moved while the native driver bundle did not, so the
+    // ported behavior is the one already pinned for 0.2.1-alpha.1.
+    assert.equal(alpha2.driverSha256, alpha.driverSha256)
+    assert.equal(alpha2.driver.removeCancelledQueuedMessage, alpha.driver.removeCancelledQueuedMessage)
+    const observed = await cancelQueuedRound(h)
+    assert.equal(observed.parked, false)
+    assert.equal(h.goal?.phase, 'paused')
+    assert.equal(h.goal?.roundsStarted, 0)
+    assert.equal(h.mainCalls, 0)
+  } finally { t.mock.restoreAll(); syncBuiltinESMExports(); await h.dispose() }
+})
 test('an unpinned newer host is refused before any driver is mounted', async t => {
-  simulateHost(t, { ...alpha, distribution: '0.2.1-alpha.2' })
+  simulateHost(t, { ...alpha, distribution: '0.2.2-alpha.0' })
   const h = new NativeFixture()
   try {
     await assert.rejects(h.initialize(), /unsupported/)

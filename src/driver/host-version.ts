@@ -39,6 +39,15 @@ export const supportedHosts: readonly HostProfile[] = [
     driverSha256: '68ed09208a7abe4e8722bc0e6ac666383046ed37dc8a4e6a0795234317c69cf8',
     driver: { removeCancelledQueuedMessage: true },
   },
+  // 0.2.1-alpha.2 moves the distribution version while publishing the very same
+  // native goal driver bundle (identical SHA-256, identical Cordis), so the
+  // ported behavior carries over unchanged; only the identity grows a row.
+  {
+    distribution: '0.2.1-alpha.2',
+    cordis: '4.0.5-alpha.1',
+    driverSha256: '68ed09208a7abe4e8722bc0e6ac666383046ed37dc8a4e6a0795234317c69cf8',
+    driver: { removeCancelledQueuedMessage: true },
+  },
 ]
 
 /** Packages whose exact version must equal the detected distribution version. */
