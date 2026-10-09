@@ -190,6 +190,7 @@ check(/非负整数/.test(editor.getSnapshot().error), 'an invalid duration prod
 const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
 check(manifest.exports['./client']?.default === './client/client.js', 'package.json exports no ./client entry')
 check(manifest.exports['./client']?.types === './client/public.d.ts', 'the ./client entry carries no types')
+check(source.includes('/goal-wait-gate/status.json'), 'the browser half does not read the published driver status')
 check(Array.isArray(manifest.files) && manifest.files.includes('client'), 'package.json files does not ship the client directory')
 check(manifest.dsh?.client?.platform === 'web', 'package.json declares no dsh.client.platform')
 

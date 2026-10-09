@@ -137,6 +137,9 @@ try {
     check(typeof status.host?.distribution === 'string' && status.host.distribution !== '', 'the record names the matched host identity')
     check(/^[0-9a-f]{64}$/.test(String(status.host?.driverSha256 ?? '')), 'the matched driver fingerprint is recorded')
   }
+  const published = await fetch('http://127.0.0.1:' + url + '/goal-wait-gate/status.json').then(response => response.ok ? response.json() : undefined)
+  check(published !== undefined, 'the plugin page can read the published status route')
+  check(published?.mounted === status.mounted, 'the published status agrees with the record on disk')
   check(child.exitCode === null, 'the server is still running after the record appeared')
   check(!text.includes('falling back'), 'the boot log reported no fallback')
   // The plugin logs at info level, which this console does not carry, so the record

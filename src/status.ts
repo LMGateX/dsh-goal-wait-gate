@@ -32,6 +32,18 @@ export interface GateStatus {
   readonly host?: { readonly distribution: string; readonly cordis?: string; readonly driverSha256?: string }
 }
 
+/** The record this process wrote last, served to the plugin page. */
+let latest: GateStatus | undefined
+
+/**
+ * The live driver status as this process last wrote it.
+ *
+ * @returns the last record, or undefined before the first write.
+ */
+export function currentGateStatus(): GateStatus | undefined {
+  return latest
+}
+
 /**
  * Where the status record lives: `$DSH_HOME/goal-wait-gate.status.json`,
  * falling back to `~/.dsh` when the launcher exported no home.
@@ -51,6 +63,9 @@ export function gateStatusPath(env: NodeJS.ProcessEnv = process.env): string {
  * @param path - destination; defaults to {@link gateStatusPath}.
  */
 export function writeGateStatus(status: GateStatus, path: string = gateStatusPath()): void {
+  // Remembered before the file write so the route serves the truth even when
+  // the file cannot be written.
+  latest = status
   try {
     mkdirSync(dirname(path), { recursive: true })
     const temporary = path + ".tmp"

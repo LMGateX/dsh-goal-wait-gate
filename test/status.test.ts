@@ -9,7 +9,9 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { gateStatusPath, writeGateStatus } from '../src/status.ts'
+import { currentGateStatus, gateStatusPath, writeGateStatus } from '../src/status.ts'
+import { registerStatusRoute } from '../src/status-route.ts'
+import type { Context } from '@deepseek-ai/cordis'
 
 test('the status record sits beside the DSH home', () => {
   assert.equal(gateStatusPath({ DSH_HOME: '/tmp/example-home' }), '/tmp/example-home/goal-wait-gate.status.json')
@@ -35,3 +37,27 @@ test('a status record can never disturb the instance it describes', () => {
   // failing a mount because of it is not.
   assert.doesNotThrow(() => writeGateStatus({ at: '2026-10-09T00:00:00.000Z', requested: 'activation', mounted: 'host-driver+gate' }, join(blocker, 'goal-wait-gate.status.json')))
 })
+
+test('the status route serves what the plugin last recorded', () => {
+  const home = mkdtempSync(join(tmpdir(), 'gate-status-'))
+  writeGateStatus({ at: '2026-10-09T00:00:00.000Z', requested: 'replacement', mounted: 'replacement-port', host: { distribution: '0.2.1-alpha.2' } }, join(home, 'goal-wait-gate.status.json'))
+  assert.equal(currentGateStatus()?.mounted, 'replacement-port', 'the record is remembered for the route')
+  let handler: ((request: unknown, response: FakeResponse) => void) | undefined
+  const scoped = {
+    get: () => ({ register: (route: { handler: (request: unknown, response: FakeResponse) => void }) => { handler = route.handler; return () => {} } }),
+    // Cordis runs an effect body immediately and keeps its disposer.
+    effect: (callback: () => unknown) => { callback() },
+  }
+  const ctx = { inject: (_names: readonly string[], callback: (scope: unknown) => void) => { callback(scoped) } }
+  registerStatusRoute(ctx as unknown as Context)
+  let body = ''
+  assert.ok(handler, 'the route was not registered')
+  handler(undefined, { writeHead: () => {}, end: (value: string) => { body = value } })
+  assert.equal(JSON.parse(body).mounted, 'replacement-port')
+  assert.equal(JSON.parse(body).host.distribution, '0.2.1-alpha.2')
+})
+
+interface FakeResponse {
+  writeHead(status: number, headers: Record<string, string>): void
+  end(body: string): void
+}

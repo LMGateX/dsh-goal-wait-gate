@@ -268,9 +268,48 @@ window.__ModuleLoader__.load({
                 color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-3)',
             },
             error: { margin: 0, color: 'var(--dsw-alias-label-error)', lineHeight: 1.6 },
+            statusLine: { margin: 0, lineHeight: 1.6 },
+            statusOk: { color: 'var(--dsw-alias-state-success-primary)' },
+            statusWarn: { color: 'var(--dsw-alias-state-warn-primary)' },
+            statusMuted: { color: 'var(--dsw-alias-label-secondary)' },
         };
         /** Short description shown on the plugin card while no editor is open. */
         const summary = '选择目标续行的实现方式（activation / replacement / native / off）与等待策略；保存即生效。';
+        /** Where the host half publishes the driver it actually mounted. */
+        const STATUS_PATH = '/goal-wait-gate/status.json';
+        /** How each mounted driver reads on the card, and which tone it carries. */
+        const DRIVER_LABELS = {
+            'replacement-port': { text: '本插件移植驱动', tone: 'Ok' },
+            'host-driver+gate': { text: '宿主驱动＋闸门（已回退）', tone: 'Warn' },
+            'host-driver': { text: '宿主原生驱动', tone: 'Muted' },
+            'none': { text: '未挂载任何驱动', tone: 'Warn' },
+        };
+        /**
+         * Read the published status while the editor is open.
+         *
+         * Polled rather than pushed: the driver can change on a strategy save, and
+         * the page must not depend on an event channel the host does not own.
+         * @returns the last answer; undefined until one arrives, null when the
+         *   route is unavailable.
+         */
+        function useDriverStatus() {
+            const [status, setStatus] = React.useState(undefined);
+            React.useEffect(() => {
+                // Node-side render harnesses have no window and must not poll.
+                if (typeof window === 'undefined' || typeof fetch !== 'function') return undefined;
+                let live = true;
+                function read() {
+                    fetch(STATUS_PATH, { headers: { accept: 'application/json' }, cache: 'no-store' })
+                        .then((response) => (response.ok ? response.json() : null))
+                        .then((value) => { if (live) setStatus(value === null || value === undefined ? null : value); })
+                        .catch(() => { if (live) setStatus(null); });
+                }
+                read();
+                const timer = setInterval(read, 10000);
+                return () => { live = false; clearInterval(timer); };
+            }, []);
+            return status;
+        }
         /** Service list Cordis activates before this bundle runs. */
         const inject = ['slots', 'configForms'];
         /**
@@ -282,6 +321,7 @@ window.__ModuleLoader__.load({
             const h = React.createElement;
             function EditorView({ configForm }) {
                 const [instance] = React.useState(() => createEditor(configForm));
+                const driverStatus = useDriverStatus();
                 React.useEffect(() => instance.start(), [instance]);
                 const state = React.useSyncExternalStore(instance.subscribe, instance.getSnapshot, instance.getSnapshot);
                 if (state.status !== 'ready') {
@@ -333,6 +373,7 @@ window.__ModuleLoader__.load({
                     onSubmit: (event) => { event.preventDefault(); void instance.save(); },
                 },
                 !state.writable && h('p', { style: styles.hint, role: 'status' }, '当前连接或配置文档为只读。'),
+                driverStatusLine(driverStatus),
                 strategyField(),
                 booleanField(BOOLEANS[0]),
                 booleanField(BOOLEANS[1]),
@@ -344,6 +385,22 @@ window.__ModuleLoader__.load({
                     h('button', { type: 'submit', style: styles.button, disabled: disabled || !state.dirty || state.conflict }, state.saving ? '正在保存…' : '保存'),
                     h('button', { type: 'button', style: styles.button, disabled: state.saving || !state.dirty, onClick: () => instance.discard() }, '放弃草稿'),
                     h('button', { type: 'button', style: styles.button, disabled, onClick: () => instance.reset() }, '恢复默认（保存后生效）')));
+            }
+            /**
+             * One line naming the driver that is really live, and why it is not the
+             * requested one when the plugin fell back.
+             * @param status - answer from {@link useDriverStatus}.
+             * @returns a status paragraph, or null before the first answer.
+             */
+            function driverStatusLine(status) {
+                if (status === undefined) return null;
+                const answer = status !== null && typeof status === 'object' ? status : undefined;
+                const known = answer === undefined ? undefined : DRIVER_LABELS[answer.mounted];
+                const tone = known === undefined ? 'Muted' : known.tone;
+                const label = known === undefined ? '尚未记录（插件可能还在启动）' : known.text;
+                const host = answer !== undefined && answer.host !== null && typeof answer.host === 'object' && typeof answer.host.distribution === 'string' ? '（宿主 ' + answer.host.distribution + '）' : '';
+                const reason = answer !== undefined && typeof answer.fallback === 'string' ? '：' + answer.fallback : '';
+                return h('p', { style: [styles.statusLine, styles['status' + tone]], role: 'status' }, '当前驱动：' + label + host + reason);
             }
             function ConfigView(props) {
                 return props.view === 'summary' ? summary : h(EditorView, { configForm: props.configForm });
