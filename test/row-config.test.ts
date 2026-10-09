@@ -16,6 +16,7 @@ import Schema from '@deepseek-ai/schemastery'
 import { Config, resolveRowConfig, strategies, type Strategy } from '../src/config.ts'
 import { applyStrategy, foreignDriverActive, NATIVE_DRIVER_NAME, REPLACEMENT_DRIVER_NAME } from '../src/mode.ts'
 import type { StrategyOptions } from '../src/mode.ts'
+import { gateStatusPath, type GateStatus } from '../src/status.ts'
 
 const root = new URL('../', import.meta.url)
 const patchFile = readFileSync(new URL('cordis.patch.yml', root), 'utf8')
@@ -39,6 +40,15 @@ interface Realm {
 }
 
 /** Build a stand-in context with the service and fiber shapes cordis provides. */
+
+/** The record the plugin just wrote, read the way a person would. */
+function readStatus(): GateStatus | undefined {
+  try {
+    return JSON.parse(readFileSync(gateStatusPath(), 'utf8')) as GateStatus
+  } catch {
+    return undefined
+  }
+}
 function realm(): Realm {
   const logs: string[] = []
   const disarmed: string[] = []
@@ -205,6 +215,13 @@ test('replacement mounts the ported driver under its own name', async () => {
   const space = await applyStrategyOn({ strategy: 'replacement' })
   assert.deepEqual(space.mounted, [REPLACEMENT_DRIVER_NAME])
   assert.deepEqual(space.disarmed, [], 'the ported driver waits by eligibility, not by disarming')
+  // The two mount shapes look alike in a transcript, so the record is what tells
+  // them apart afterwards — and it must name the real driver, not the request.
+  const status = readStatus()
+  assert.equal(status?.requested, 'replacement')
+  assert.equal(status?.mounted, 'replacement-port')
+  assert.equal(status?.fallback, undefined)
+  assert.equal(status?.host?.distribution, '0.2.1-alpha.1')
 })
 
 test('replacement falls back to the host driver when the host is not pinned', async () => {
@@ -214,6 +231,10 @@ test('replacement falls back to the host driver when the host is not pinned', as
   assert.ok(space.logs.some(line => line.startsWith('error ') && line.includes('falling back')), 'the fallback was not logged')
   assert.deepEqual(space.mounted, [NATIVE_DRIVER_NAME], 'the fallback did not mount the host driver')
   assert.deepEqual(space.disarmed, ['disarm'], 'the fallback did not keep the gate')
+  const status = readStatus()
+  assert.equal(status?.requested, 'replacement')
+  assert.equal(status?.mounted, 'host-driver+gate', 'the record must name what really mounted')
+  assert.match(status?.fallback ?? '', /unsupported distribution/)
 })
 
 test('a foreign driver makes the row stay inert instead of driving twice', async () => {

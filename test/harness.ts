@@ -5,6 +5,16 @@
  * fakes, drive the exact events the harness dispatches, and observe only the
  * goal mutations the plugin performs through the goal service interface.
  */
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+// The plugin records which driver is live beside the DSH home. A test run must
+// never overwrite the record of the instance it is developed against, so every
+// suite gets a scratch home unless the runner set one deliberately.
+if (process.env['DSH_HOME'] === undefined || process.env['DSH_HOME'] === '') {
+  process.env['DSH_HOME'] = mkdtempSync(join(tmpdir(), 'gate-home-'))
+}
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { GoalActivationChanged, GoalChanged } from '@deepseek-ai/dsh-goal'

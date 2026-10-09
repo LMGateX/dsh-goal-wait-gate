@@ -1,0 +1,37 @@
+/**
+ * The status record exists so a person can tell which driver is really live:
+ * the two mount shapes hold continuation differently (a skipped round versus a
+ * disarmed goal) and look alike in a transcript. It must be readable, complete
+ * and never able to disturb the instance it describes.
+ */
+import assert from 'node:assert/strict'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { test } from 'node:test'
+import { gateStatusPath, writeGateStatus } from '../src/status.ts'
+
+test('the status record sits beside the DSH home', () => {
+  assert.equal(gateStatusPath({ DSH_HOME: '/tmp/example-home' }), '/tmp/example-home/goal-wait-gate.status.json')
+  const fallback = gateStatusPath({})
+  assert.match(fallback, /[.]dsh[/\\]goal-wait-gate[.]status[.]json$/)
+  assert.equal(gateStatusPath({ DSH_HOME: '' }), fallback, 'an exported empty home must not win')
+})
+
+test('a status record is written whole', () => {
+  const home = mkdtempSync(join(tmpdir(), 'gate-status-'))
+  const path = gateStatusPath({ DSH_HOME: home })
+  writeGateStatus({ at: '2026-10-09T00:00:00.000Z', requested: 'replacement', mounted: 'replacement-port', host: { distribution: '0.2.1-alpha.1', cordis: '4.0.5-alpha.1', driverSha256: 'abc' } }, path)
+  const written = JSON.parse(readFileSync(path, 'utf8')) as { mounted?: string; host?: { distribution?: string } }
+  assert.equal(written.mounted, 'replacement-port')
+  assert.equal(written.host?.distribution, '0.2.1-alpha.1')
+})
+
+test('a status record can never disturb the instance it describes', () => {
+  const home = mkdtempSync(join(tmpdir(), 'gate-status-'))
+  const blocker = join(home, 'blocker')
+  writeFileSync(blocker, 'not a directory')
+  // A path that cannot be created is swallowed: losing the record is allowed,
+  // failing a mount because of it is not.
+  assert.doesNotThrow(() => writeGateStatus({ at: '2026-10-09T00:00:00.000Z', requested: 'activation', mounted: 'host-driver+gate' }, join(blocker, 'goal-wait-gate.status.json')))
+})

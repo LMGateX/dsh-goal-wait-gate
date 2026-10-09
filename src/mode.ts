@@ -34,6 +34,7 @@ import { GoalWaitGate } from './gate.ts'
 import { createBackgroundPolicy } from './driver/background-work.ts'
 import { assertHostVersion } from './driver/host-version.ts'
 import { installNativeDriver } from './driver/native-driver.ts'
+import { writeGateStatus, type MountedDriver } from './status.ts'
 
 /** Registered plugin name of the host's own goal-round driver. */
 export const NATIVE_DRIVER_NAME = 'goal-round-driver'
@@ -228,10 +229,12 @@ class RowStrategy implements StrategyHandle {
     if (config.strategy === 'off') {
       this.#mountGate(config, true)
       this.#ctx.logger.info('goal-wait-gate: strategy=off — no driver is mounted, so no goal continues automatically until this plugin is switched off or uninstalled')
+      this.#record('off', 'none', 'the off strategy mounts no driver')
       return
     }
     if (foreignDriverActive(this.#ctx)) {
       this.#ctx.logger.error('goal-wait-gate: another goal-round driver is already mounted; this plugin stays inert so a goal is never driven twice')
+      this.#record(config.strategy, 'none', 'another goal-round driver is already mounted')
       return
     }
     const gated = config.strategy === 'activation'
@@ -324,6 +327,7 @@ class RowStrategy implements StrategyHandle {
         return await this.#fallbackToActivation(config, 'the ported driver could not be mounted')
       }
       if (outcome === 'pending') ctx.logger.error('goal-wait-gate: the ported driver is still waiting for the services it injects; it mounts as soon as they appear')
+      this.#record(config.strategy, 'replacement-port', undefined, profile)
       return true
     }
     let native: NativeDriverModule
@@ -349,15 +353,39 @@ class RowStrategy implements StrategyHandle {
     const fiber = ctx.plugin(native) as unknown as Fiber
     this.#drivers.push(fiber)
     watchMount(ctx, fiber, 'the host goal-round driver', options)
+    this.#record(config.strategy, config.strategy === 'activation' ? 'host-driver+gate' : 'host-driver')
     return true
   }
 
+  /**
+   * Record which driver is live, best-effort, for the person reading the row later.
+   *
+   * @param requested - strategy the row asked for.
+   * @param mounted - driver that is actually live.
+   * @param fallback - why the request was not honoured, when it was not.
+   * @param profile - matched host identity, when the ported driver was selectable.
+   */
+  #record(requested: string, mounted: MountedDriver, fallback?: string, profile?: { distribution: string; cordis?: string; driverSha256?: string }): void {
+    writeGateStatus({
+      at: new Date().toISOString(),
+      requested,
+      mounted,
+      ...(fallback === undefined ? {} : { fallback }),
+      ...(profile === undefined ? {} : { host: { distribution: profile.distribution, ...(profile.cordis === undefined ? {} : { cordis: profile.cordis }), ...(profile.driverSha256 === undefined ? {} : { driverSha256: profile.driverSha256 }) } }),
+    })
+  }
   /** Keep goals driven: mount the host driver beside the gate after a failure. */
   async #fallbackToActivation(config: ResolvedRowConfig, why: string): Promise<boolean> {
     const ctx = this.#ctx
     ctx.logger.error(`goal-wait-gate: ${config.strategy} cannot be honoured — ${why}; falling back to the host driver beside the gate`)
     if (this.#gate === undefined) this.#mountGate(config, false)
-    return await this.#mountDriver({ ...config, strategy: 'activation' })
+    const mounted = await this.#mountDriver({ ...config, strategy: 'activation' })
+    // Recorded last, and for the strategy that was asked for: the nested mount
+    // writes its own record, and the person reading this file needs the request,
+    // what really mounted, and why they differ — not the fallback silently
+    // relabelled as a deliberate activation row.
+    this.#record(config.strategy, mounted ? 'host-driver+gate' : 'none', why)
+    return mounted
   }
 
   /** Drop the current driver and gate without closing the row. */

@@ -107,6 +107,31 @@ Invalid configuration fails at load with an error naming the field. A saved chan
 
 **Why volatile matters.** `@deepseek-ai/dsh-settings` builds a form only from volatile fields (`volatileForm` returns nothing when no field carries `meta.volatile`), so a row with a plain schema loads fine and still shows no configuration at all. Volatility is also what makes the save live: cordis rejects a volatile node beneath a volatile ancestor, so the union branches stay plain under the volatile `strategy` field.
 
+## Which driver is really live
+
+`strategy` is a request, not a promise. A host this build does not pin, a port
+mount failure or a foreign driver makes the plugin fall back to the host driver
+beside the gate. The two shapes hold continuation differently — the ported
+driver simply never queues the next round and leaves the goal `active`/`armed`,
+while the activation gate holds by **disarming** the goal — and they look alike
+in a transcript. The plugin therefore writes what it mounted, and why, to
+`$DSH_HOME/goal-wait-gate.status.json` (`~/.dsh` when the launcher exported no
+home):
+
+```json
+{
+  "at": "2026-10-09T14:02:11.000Z",
+  "requested": "replacement",
+  "mounted": "replacement-port",
+  "host": { "distribution": "0.2.1-alpha.1", "cordis": "4.0.5-alpha.1", "driverSha256": "68ed0920…" }
+}
+```
+
+`mounted` is one of `replacement-port`, `host-driver+gate`, `host-driver` or
+`none`; `fallback` carries the reason whenever `mounted` does not honour
+`requested`. Writing it is best-effort by contract — losing the file never
+affects continuation.
+
 ## Verification
 
 ```bash
