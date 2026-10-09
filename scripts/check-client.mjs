@@ -48,6 +48,10 @@ const React = {
   createElement(type, props, ...children) {
     return { type, props: props ?? {}, children: children.flat(Infinity).filter((child) => child !== null && child !== undefined && child !== false) }
   },
+  /** Minimal stand-in so a real error boundary can be declared in the bundle. */
+  Component: class BoundaryComponent {
+    constructor(props) { this.props = props === undefined ? {} : props }
+  },
   useState(initial) {
     return [typeof initial === 'function' ? initial() : initial, () => {}]
   },
@@ -142,7 +146,7 @@ const walk = (node) => {
   if (node === null || typeof node !== 'object') return
   // Resolve function components the way React would, so the smoke check walks the
   // rendered element tree rather than the component references.
-  if (typeof node.type === 'function') return walk(node.type(node.props))
+  if (typeof node.type === 'function') { const isClass = node.type.prototype !== undefined && typeof node.type.prototype.render === 'function'; return walk(isClass ? new node.type(node.props).render() : node.type(node.props)); }
   nodes.push(node)
   walk(node.children)
 }

@@ -305,8 +305,7 @@ window.__ModuleLoader__.load({
                         .catch(() => { if (live) setStatus(null); });
                 }
                 read();
-                const timer = setInterval(read, 10000);
-                return () => { live = false; clearInterval(timer); };
+                return () => { live = false; };
             }, []);
             return status;
         }
@@ -402,8 +401,32 @@ window.__ModuleLoader__.load({
                 const reason = answer !== undefined && typeof answer.fallback === 'string' ? '：' + answer.fallback : '';
                 return h('p', { style: [styles.statusLine, styles['status' + tone]], role: 'status' }, '当前驱动：' + label + host + reason);
             }
+            /**
+             * Keeps one contribution failure from erasing the whole section.
+             * Without it a render error removes the form silently, which looks
+             * exactly like a plugin that has no configuration at all.
+             */
+            class FormBoundary extends React.Component {
+                constructor(props) {
+                    super(props);
+                    this.state = { error: undefined };
+                }
+                static getDerivedStateFromError(error) {
+                    return { error };
+                }
+                componentDidCatch(error) {
+                    if (typeof console !== 'undefined' && console.error) console.error('dsh-goal-wait-gate: configuration form failed', error);
+                }
+                render() {
+                    if (this.state.error !== undefined) {
+                        const message = this.state.error && this.state.error.message ? this.state.error.message : this.state.error;
+                        return h('p', { role: 'alert', style: styles.error }, '配置表单渲染失败：' + String(message));
+                    }
+                    return this.props.child;
+                }
+            }
             function ConfigView(props) {
-                return props.view === 'summary' ? summary : h(EditorView, { configForm: props.configForm });
+                return props.view === 'summary' ? summary : h(FormBoundary, { child: h(EditorView, { configForm: props.configForm }) });
             }
             ctx.effect(() => ctx.configForms.whileServed([ROW_ID], () => ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
                 name: 'plugins.row.config',
