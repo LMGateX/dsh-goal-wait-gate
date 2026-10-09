@@ -41,13 +41,22 @@ export function registerStatusRoute(ctx: Context): void {
   ctx.inject(['webServer'], (scoped: Context) => {
     const server = scoped.get('webServer') as RouteRegistrar | undefined
     if (server === undefined) return
-    scoped.effect(() => server.register({
-      kind: 'exact',
-      path: STATUS_PATH,
-      handler: (_request, response) => {
-        response.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-        response.end(JSON.stringify(currentGateStatus() ?? { mounted: 'unknown' }))
-      },
-    }))
+    // Best effort: 0.2.1-alpha.2 throws on a duplicate exact path, and this
+    // optional surface must never take the driver down with it.
+    scoped.effect(() => {
+      try {
+        return server.register({
+          kind: 'exact',
+          path: STATUS_PATH,
+          handler: (_request, response) => {
+            response.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+            response.end(JSON.stringify(currentGateStatus() ?? { mounted: 'unknown' }))
+          },
+        })
+      } catch (error) {
+        ctx.logger.warn('goal-wait-gate: the status route could not be registered (' + String(error) + '); the plugin page shows no live driver state')
+        return () => {}
+      }
+    })
   })
 }

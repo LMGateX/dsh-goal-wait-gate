@@ -27,10 +27,30 @@ export function createBackgroundPolicy(ctx: Context, config: BackgroundConfig = 
   }
   const countsJob = (job: {kind: string}): boolean => config.waitForJobs !== false || (config.waitForSubagents !== false && job.kind === 'subagent')
   const hasDescendant = (agent: Agent): boolean => ctx.agents.list().some(child => ancestors(child).includes(agent))
+  /**
+   * Runs this realm cannot place on an owning agent, keyed by run id.
+   *
+   * The host calls subagent listeners with the run info alone, so an activation
+   * started by an external provider may carry no resolvable parent. Holding by
+   * run id until its end arrives is the fail-closed choice: the driver waits
+   * instead of queueing a round while work this gate cannot see is in flight.
+   */
+  const unplaceable = new Set<string>()
+  /** Resolve the owning parent from the emit argument, then from lineage. */
+  const lineageParent = (scope: typeof ctx, childId: string, explicit: Agent | undefined): readonly Agent[] => {
+    if (explicit !== undefined && scope.agents.get(explicit.id) === explicit) return [explicit]
+    const sessions = (scope as unknown as { get: (name: string) => unknown }).get('sessions') as
+      | { get?: (id: string) => { header?: { parentSession?: unknown } } | undefined }
+      | undefined
+    const parentId = sessions?.get?.(childId)?.header?.parentSession
+    if (typeof parentId !== 'string') return []
+    const resolved = scope.agents.get(parentId as Parameters<typeof scope.agents.get>[0])
+    return resolved === undefined ? [] : [resolved]
+  }
   return {
     allows(agent) {
       if (unavailable) throw new Error('Published background work cannot be observed safely')
-      if (closed || handoffs.has(agent)) return false
+      if (closed || handoffs.has(agent) || unplaceable.size > 0) return false
       if (ctx.jobs.list(agent.id).some(job => countsJob(job) && job.owner === agent.id && (job.status === 'running' || job.status === 'stopping'))) return false
       if (config.waitForSubagents !== false && (hasDescendant(agent) || [...epochs.values()].some(chain => chain.includes(agent)))) return false
       return true
@@ -71,12 +91,11 @@ export function createBackgroundPolicy(ctx: Context, config: BackgroundConfig = 
           if (closed) return
           const child = ctx.agents.get(info.id)
           const childChain = child === undefined ? [] : ancestors(child)
-          const chain = childChain.length > 0
-            ? childChain
-            : parent !== undefined && ctx.agents.get(parent.id) === parent ? [parent] : []
-          // An activation this realm cannot place stays unobserved here; hosts
-          // before 0.2.1-alpha.2 still report those runs as owned Jobs below.
-          if (chain.length === 0) return
+          const chain = childChain.length > 0 ? childChain : lineageParent(ctx, info.id, parent)
+          if (chain.length === 0) {
+            if (!unplaceable.has(info.runId)) { unplaceable.add(info.runId); notify(ctx.agents.list()) }
+            return
+          }
           if (epochs.has(info.runId)) {
             unavailable = true; notify(ctx.agents.list()); return
           }
@@ -85,6 +104,7 @@ export function createBackgroundPolicy(ctx: Context, config: BackgroundConfig = 
         }
         stops.push(ctx.on('subagent/start', onStart))
         stops.push(ctx.on('subagent/end', info => {
+          unplaceable.delete(info.runId)
           const chain = epochs.get(info.runId)
           if (chain === undefined || closed) return
           epochs.delete(info.runId)

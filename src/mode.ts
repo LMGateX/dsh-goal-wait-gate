@@ -395,7 +395,7 @@ class RowStrategy implements StrategyHandle {
     this.#gate = undefined
     this.#strategy = undefined
     gate?.dispose()
-    for (const driver of drivers) await driver.dispose().catch(() => {})
+    for (const driver of drivers) await settleDispose(driver)
   }
 
   /** Close the row: the gate re-arms its holds, the children are disposed. */
@@ -407,8 +407,20 @@ class RowStrategy implements StrategyHandle {
     this.#gate = undefined
     this.#strategy = undefined
     gate?.dispose()
-    for (const driver of drivers) void driver.dispose().catch(() => {})
+    for (const driver of drivers) void settleDispose(driver)
   }
+}
+
+/**
+ * Dispose a child without trusting what dispose() returns.
+ *
+ * A fiber disposed a second time resolves to undefined, not a promise, and this
+ * teardown effect runs after the child registration effect on a parent unload.
+ * An unguarded .catch there throws and aborts the rest of the disposer chain,
+ * leaking this row's listeners and failing the reload that triggered it.
+ */
+function settleDispose(target: { dispose: () => unknown }): Promise<void> {
+  return Promise.resolve().then(() => target.dispose()).then(() => undefined, () => undefined)
 }
 
 /** One line describing who is driving. */
@@ -433,7 +445,7 @@ function watchMount(ctx: Context, fiber: Fiber, label: string, options: Strategy
     // here anyway, and a stuck fiber would keep the composition from settling.
     ctx.logger.error(`goal-wait-gate: ${label} never received the services it injects and was unmounted`)
     void (fiber as unknown as Promise<unknown>).then(() => {}, () => {})
-    fiber.dispose().catch(() => {})
+    void settleDispose(fiber)
   }, options.mountTimeoutMs ?? 1500)
   timer.unref?.()
   void (fiber as unknown as Promise<unknown>).then(

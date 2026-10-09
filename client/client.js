@@ -224,6 +224,7 @@ window.__ModuleLoader__.load({
                         const ok = await form.mutate(prepared.ops, baseline);
                         if (!active) return ok;
                         if (ok) {
+                            refreshDriverStatus();
                             baseline = undefined;
                             resets = new Set();
                             accepted = form.getSnapshot();
@@ -277,6 +278,11 @@ window.__ModuleLoader__.load({
         const summary = '选择目标续行的实现方式（activation / replacement / native / off）与等待策略；保存即生效。';
         /** Where the host half publishes the driver it actually mounted. */
         const STATUS_PATH = '/goal-wait-gate/status.json';
+        /** Re-readers that keep the published driver line current. */
+        const driverStatusRefreshers = new Set();
+        function refreshDriverStatus() {
+            for (const read of driverStatusRefreshers) read();
+        }
         /** How each mounted driver reads on the card, and which tone it carries. */
         const DRIVER_LABELS = {
             'replacement-port': { text: '本插件移植驱动', tone: 'Ok' },
@@ -305,7 +311,8 @@ window.__ModuleLoader__.load({
                         .catch(() => { if (live) setStatus(null); });
                 }
                 read();
-                return () => { live = false; };
+                driverStatusRefreshers.add(read);
+                return () => { live = false; driverStatusRefreshers.delete(read); };
             }, []);
             return status;
         }
@@ -399,7 +406,7 @@ window.__ModuleLoader__.load({
                 const label = known === undefined ? '尚未记录（插件可能还在启动）' : known.text;
                 const host = answer !== undefined && answer.host !== null && typeof answer.host === 'object' && typeof answer.host.distribution === 'string' ? '（宿主 ' + answer.host.distribution + '）' : '';
                 const reason = answer !== undefined && typeof answer.fallback === 'string' ? '：' + answer.fallback : '';
-                return h('p', { style: [styles.statusLine, styles['status' + tone]], role: 'status' }, '当前驱动：' + label + host + reason);
+                return h('p', { style: Object.assign({}, styles.statusLine, styles['status' + tone]), role: 'status' }, '当前驱动：' + label + host + reason);
             }
             /**
              * Keeps one contribution failure from erasing the whole section.
