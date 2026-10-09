@@ -65,6 +65,17 @@ export interface StrategyHandle {
    * @returns a promise resolving once this row matches the saved configuration.
    */
   sync(): Promise<void>
+  /**
+   * Adopt a configuration the plugin page just saved.
+   *
+   * A settings document write does not re-resolve a running row, so the page
+   * hands its own save back here: the row remounts to match it immediately
+   * instead of waiting for a composition reload that never comes.
+   *
+   * @param config - the saved row fields.
+   * @returns a promise resolving once this row matches the saved configuration.
+   */
+  applyLive(config: unknown): Promise<void>
   /** Dispose whatever this row mounted. Idempotent. */
   dispose(): Promise<void>
   /** The strategy mounted right now, or undefined before the first mount. */
@@ -152,6 +163,7 @@ export async function applyStrategy(ctx: Context, config: RowConfig | RowConfigI
 class RowStrategy implements StrategyHandle {
   readonly #ctx: Context
   readonly #config: RowConfig | RowConfigInput
+  #live: RowConfigInput | undefined
   readonly #options: StrategyOptions
   readonly #drivers: Fiber[] = []
   #gate: GoalWaitGate | undefined
@@ -183,6 +195,11 @@ class RowStrategy implements StrategyHandle {
     return this.#enqueue(false)
   }
 
+  applyLive(config: unknown): Promise<void> {
+    this.#live = config as RowConfigInput
+    return this.#enqueue(false, true)
+  }
+
   mount(): Promise<void> {
     return this.#enqueue(true)
   }
@@ -194,8 +211,8 @@ class RowStrategy implements StrategyHandle {
    *   (the initial mount); otherwise the error is logged and the row survives it.
    * @returns the queued application.
    */
-  #enqueue(fatal: boolean): Promise<void> {
-    const next = this.#queue.then(async () => await this.#apply())
+  #enqueue(fatal: boolean, force = false): Promise<void> {
+    const next = this.#queue.then(async () => await this.#apply(force))
     this.#queue = next.catch((error: unknown) => {
       this.#ctx.logger.error(`goal-wait-gate: could not apply the saved configuration: ${messageOf(error)}`)
     })
@@ -214,10 +231,10 @@ class RowStrategy implements StrategyHandle {
   }
 
   /** Bring the mounted driver in line with the live configuration. */
-  async #apply(): Promise<void> {
+  async #apply(force = false): Promise<void> {
     if (this.#closed) return
-    const config = resolveRowConfig(this.#config)
-    if (this.#strategy === config.strategy) return
+    const config = resolveRowConfig(this.#live ?? this.#config)
+    if (!force && this.#strategy === config.strategy) return
     await this.#teardown()
     if (this.#closed) return
     this.#strategy = config.strategy

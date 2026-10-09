@@ -17,7 +17,7 @@ import type {} from '@deepseek-ai/dsh-goal'
 import type {} from '@deepseek-ai/dsh-jobs'
 import { Config, type RowConfigInput } from './config.ts'
 import { applyStrategy } from './mode.ts'
-import { registerStatusRoute } from './status-route.ts'
+import { publishLiveRow, registerStatusRoute } from './status-route.ts'
 
 /** Registered plugin name. */
 export const name = 'goal-wait-gate'
@@ -42,7 +42,10 @@ export async function apply(ctx: Context, config: RowConfigInput = {}): Promise<
   registerStatusRoute(ctx)
   // The raw config is handed over, not a snapshot: volatile fields arrive as
   // live accessors, and the row re-reads them on every checkpoint.
-  await applyStrategy(ctx, config)
+  const row = await applyStrategy(ctx, config)
+  // The page saves through a settings document, which does not re-resolve a
+  // running row: publish the handle so the page can hand its own save back.
+  publishLiveRow(row)
 }
 
 /** Mountable plugin value, also usable from tests and manual compositions. */

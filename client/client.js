@@ -224,6 +224,10 @@ window.__ModuleLoader__.load({
                         const ok = await form.mutate(prepared.ops, baseline);
                         if (!active) return ok;
                         if (ok) {
+                            const parsedHold = parseDuration(state.maxHoldMs);
+                            const saved = { strategy: state.strategy, waitForJobs: state.waitForJobs, waitForSubagents: state.waitForSubagents };
+                            if (parsedHold.error === undefined) saved.maxHoldMs = parsedHold.value;
+                            await publishLiveConfig(saved);
                             refreshDriverStatus();
                             baseline = undefined;
                             resets = new Set();
@@ -280,6 +284,26 @@ window.__ModuleLoader__.load({
         const STATUS_PATH = '/goal-wait-gate/status.json';
         /** Re-readers that keep the published driver line current. */
         const driverStatusRefreshers = new Set();
+        /**
+         * Hand a saved configuration to the host row.
+         *
+         * Writing the settings document does not re-resolve a running row, so the
+         * page tells the row about its own save; without this the old driver stays
+         * mounted until the next restart.
+         */
+        async function publishLiveConfig(config) {
+            if (typeof fetch !== 'function') return;
+            try {
+                await fetch(STATUS_PATH, {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify(config),
+                    cache: 'no-store',
+                });
+            } catch (error) {
+                // The row keeps its previous driver; the status line still reports the truth.
+            }
+        }
         function refreshDriverStatus() {
             for (const read of driverStatusRefreshers) read();
         }
