@@ -118,7 +118,16 @@ async function readFactsFrom(ctx: Context, resolve: ModuleResolver): Promise<Hos
   ]
   for (const [participating, packageShortNames] of families) {
     if (!participating) continue
-    for (const shortName of packageShortNames) versions['@deepseek-ai/' + shortName] = await readPackageVersion(resolve, '@deepseek-ai/' + shortName)
+    for (const shortName of packageShortNames) {
+      try {
+        versions['@deepseek-ai/' + shortName] = await readPackageVersion(resolve, '@deepseek-ai/' + shortName)
+      } catch {
+        // A family package a distribution no longer publishes must not void the
+        // whole scope. 0.2.1-alpha.2 dropped dsh-subagent-in-process-driver, and
+        // treating that as a broken scope left every pinned host unreachable.
+        continue
+      }
+    }
   }
   // Companions are detected beside the resolved driver, not by module lookup, so
   // a mixed or hoisted tree can neither hide nor borrow a companion.

@@ -49,3 +49,18 @@ test('the host scope speaks before stale copies inside the plugin', async () => 
   assert.equal(sets[0]?.versions['@deepseek-ai/dsh-agent'], '0.2.1-alpha.1')
   assert.ok(sets.some(set => set.versions['@deepseek-ai/dsh-agent'] === '0.1.7-rc.2'), 'the plugin own tree stays the last resort')
 })
+
+test('a family package this distribution no longer ships does not void the scope', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'gate-scope-'))
+  const hostModules = join(home, 'profiles', 'web', 'node_modules', '@deepseek-ai')
+  const plugin = join(home, 'profiles', 'web', 'node_modules', 'dsh-goal-wait-gate')
+  for (const name of ['cordis', ...REQUIRED]) publish(hostModules, name, name === 'cordis' ? '4.0.5-alpha.1' : '0.2.1-alpha.2')
+  // A mounted subagents service makes the family participate, but 0.2.1-alpha.2
+  // no longer publishes dsh-subagent-in-process-driver. Reading that as a broken
+  // scope is how every pinned host became unreachable and replacement fell back.
+  const ctx = { get: (name: string) => (name === 'subagents' ? {} : undefined) } as unknown as Context
+  const sets = await readHostFactSets(ctx, plugin)
+  assert.equal(sets.length, 1, 'the scope must survive a family package this host dropped')
+  assert.equal(sets[0]?.versions['@deepseek-ai/dsh-agent'], '0.2.1-alpha.2')
+  assert.equal(sets[0]?.versions['@deepseek-ai/dsh-subagent'], undefined, 'an absent family package contributes no version')
+})
