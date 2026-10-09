@@ -380,6 +380,13 @@ class RowStrategy implements StrategyHandle {
       }) as unknown as Fiber
       this.#drivers.push(child)
       const outcome = await settleMount(child, options)
+      if (this.#closed) {
+        // The row closed while this child was still mounting: dispose it here,
+        // or it would drive goals with nobody left to tear it down.
+        this.#drivers.splice(this.#drivers.indexOf(child), 1)
+        void settleDispose(child)
+        return true
+      }
       if (outcome === 'failed') {
         this.#drivers.splice(this.#drivers.indexOf(child), 1)
         await child.dispose().catch(() => {})

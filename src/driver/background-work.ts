@@ -32,7 +32,37 @@ export function createBackgroundPolicy(ctx: Context, source: BackgroundConfigSou
     return result
   }
   const countsJob = (job: {kind: string}): boolean => settings().waitForJobs !== false || (settings().waitForSubagents !== false && job.kind === 'subagent')
-  const hasDescendant = (agent: Agent): boolean => ctx.agents.list().some(child => ancestors(child).includes(agent))
+  /**
+   * Live children by parent session id.
+   *
+   * The old shape asked every live agent whether this one was in its ancestor
+   * chain: O(A * depth) with a temporary Set and array per candidate, paid up to
+   * three times per goal round. A direct child that is live and owned already
+   * answers the question, because a chain with a dead hop never counted either.
+   * The index is fed by the lifecycle events below and rebuilt when one is missed.
+   */
+  const children = new Map<string, Set<Agent>>()
+  let indexed = false
+  const indexAgent = (agent: Agent): void => {
+    const parentId = agent.session.header.parentSession
+    if (parentId === undefined) return
+    const bucket = children.get(parentId)
+    if (bucket === undefined) children.set(parentId, new Set([agent]))
+    else bucket.add(agent)
+  }
+  const hasDescendant = (agent: Agent): boolean => {
+    if (!indexed) {
+      children.clear()
+      for (const live of ctx.agents.list()) indexAgent(live)
+      indexed = true
+    }
+    for (const child of children.get(agent.id) ?? []) {
+      if (child.session.header.origin !== 'subagent') continue
+      if (ctx.agents.get(child.id) !== child) continue
+      if (ctx.agents.isOwnedBy(child.id, agent)) return true
+    }
+    return false
+  }
   /**
    * Runs this realm cannot place on an owning agent, keyed by run id.
    *
@@ -127,7 +157,8 @@ export function createBackgroundPolicy(ctx: Context, source: BackgroundConfigSou
           epochs.delete(info.runId)
           notify(chain) // rc.2 continuable end follows disposal and the native notice attempt.
         }))
-        stops.push(ctx.on('agent/disposed', () => notify(ctx.agents.list())))
+        stops.push(ctx.on('agent/created', ({ agent }): undefined => { indexAgent(agent) }))
+        stops.push(ctx.on('agent/disposed', () => { indexed = false; notify(ctx.agents.list()) }))
       }
       return () => { closed = true; for (const stop of stops.toReversed()) stop(); epochs.clear(); handoffs.clear() }
     },
