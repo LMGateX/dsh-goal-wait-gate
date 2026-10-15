@@ -6,6 +6,9 @@ import type { SubagentRunId, SubagentRunInfo } from '@deepseek-ai/dsh-subagent'
 import type { DriverPolicy } from './native-driver.ts'
 
 export interface BackgroundConfig { waitForJobs?: boolean; waitForSubagents?: boolean }
+
+/** Job lifecycle events this policy counts; hoisted so no event allocates it. */
+const JOB_LIFECYCLE: ReadonlySet<string> = new Set(['registered', 'settled', 'stopping', 'removed'])
 /** Settings read at the moment of a decision, so a saved policy never remounts the driver. */
 export type BackgroundConfigSource = BackgroundConfig | (() => BackgroundConfig)
 export function createBackgroundPolicy(ctx: Context, source: BackgroundConfigSource = {}): DriverPolicy {
@@ -123,9 +126,12 @@ export function createBackgroundPolicy(ctx: Context, source: BackgroundConfigSou
    * removal no other chain can observe. A node this index never saw reports no
    * chain, and the handler then stays conservative and wakes the realm.
    */
-  const ancestry = new WeakMap<Agent, readonly Agent[]>()
+  const ancestry = new WeakMap<Agent, readonly Agent['id'][]>()
   const indexAgent = (agent: Agent): void => {
-    ancestry.set(agent, ancestors(agent))
+    // Ids, not the agents themselves: a value here outlives a disposed ancestor
+    // for as long as its descendant lives, and a wake only ever needs the
+    // ancestors that are still live anyway.
+    ancestry.set(agent, ancestors(agent).map(ancestor => ancestor.id))
     const parentId = agent.session.header.parentSession
     if (parentId === undefined) return
     const bucket = children.get(parentId)
@@ -196,7 +202,7 @@ export function createBackgroundPolicy(ctx: Context, source: BackgroundConfigSou
       })
       if (settings().waitForJobs !== false || settings().waitForSubagents !== false) {
         stops.push(ctx.jobs.events.subscribe({owners: 'all'}, event => {
-          if (closed || !('job' in event) || event.job.owner === undefined || !['registered', 'settled', 'stopping', 'removed'].includes(event.type)) return
+          if (closed || !('job' in event) || event.job.owner === undefined || !JOB_LIFECYCLE.has(event.type)) return
           recordJobEvent(event)
           if (!countsJob(event.job)) return
           const agent = ctx.agents.get(event.job.owner)
@@ -274,8 +280,11 @@ export function createBackgroundPolicy(ctx: Context, source: BackgroundConfigSou
           // A node this index knows is removed exactly; anything else re-seeds
           // from the live registry instead of guessing what the index missed.
           if (!detachAgent(agent)) indexed = false
-          const chain = ancestry.get(agent)
-          if (chain === undefined || chain.length > 0) notify(chain ?? ctx.agents.list())
+          const ids = ancestry.get(agent)
+          if (ids === undefined) { notify(ctx.agents.list()); return }
+          const chain: Agent[] = []
+          for (const id of ids) { const ancestor = ctx.agents.get(id); if (ancestor !== undefined) chain.push(ancestor) }
+          if (chain.length > 0) notify(chain)
         }))
       }
       return () => { closed = true; for (const stop of stops.toReversed()) stop(); epochs.clear(); epochRefs.clear(); handoffs.clear(); liveJobs.clear() }

@@ -380,6 +380,36 @@ test('a changed live strategy swaps the driver in place, with exactly one driver
   assert.equal(handle.current(), undefined)
 })
 
+test('a checkpoint follows a live strategy change no page save announced', async () => {
+  const space = realm()
+  let strategy: Strategy = 'activation'
+  const handle = await applyStrategy(space.ctx, {
+    strategy: { get: () => strategy },
+    waitForJobs: { get: () => true },
+    waitForSubagents: { get: () => true },
+    maxHoldMs: { get: () => 0 },
+  }, {
+    importNativeDriver: async () => nativeStandIn,
+    detectHost: async () => ({ distribution: '0.2.1-alpha.1', driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: false } }),
+  })
+  assert.equal(handle.current(), 'activation')
+
+  // The settings document changed without a page save, so only the checkpoint
+  // this row already owns can notice — and it must still apply the new strategy.
+  strategy = 'native'
+  space.emit('agent/turn-stopping', { agent: { id: 'agent-1', status: 'idle', session: { id: 'session-1', header: { origin: 'root' } } }, turn: 1, signal: new AbortController().signal })
+  for (let tick = 0; tick < 50 && handle.current() !== 'native'; tick++) await new Promise(resolve => setImmediate(resolve))
+  assert.equal(handle.current(), 'native', 'the checkpoint did not apply the live strategy')
+  assert.deepEqual(space.mounted, [NATIVE_DRIVER_NAME, NATIVE_DRIVER_NAME], 'the driver was not swapped in place')
+
+  // Level with the live value, a further checkpoint applies nothing.
+  const mounted = space.mounted.length
+  space.emit('agent/turn-stopping', { agent: { id: 'agent-1', status: 'idle', session: { id: 'session-1', header: { origin: 'root' } } }, turn: 2, signal: new AbortController().signal })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(space.mounted.length, mounted, 'a steady-state checkpoint re-applied the configuration')
+  for (const cleanup of space.effects) cleanup()
+})
+
 test('a live policy change applies at the next evaluation without a remount', async () => {
   const space = realm()
   let waitForJobs = true

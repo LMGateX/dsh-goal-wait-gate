@@ -250,10 +250,29 @@ class RowStrategy implements StrategyHandle {
     return Promise.resolve()
   }
 
-  /** One checkpoint: follow the saved configuration, then evaluate the live gate. */
+  /**
+   * One checkpoint: follow the saved configuration, then evaluate the live gate.
+   *
+   * The queue is only touched when the saved strategy really differs from the
+   * mount. This runs twice per turn and once per goal change, and the
+   * steady-state apply is a pure no-op: entering it anyway allocated a promise,
+   * a closure and a microtask on every checkpoint — more than the gate
+   * evaluation it precedes, and all of it when the `replacement` strategy
+   * mounts no gate at all.
+   */
   #checkpoint(agent: Agent): void {
-    void this.sync()
+    if (this.#strategyChanged()) void this.sync()
     this.#gate?.evaluate(agent)
+  }
+
+  /** Whether the live configuration now names a strategy other than the mount. */
+  #strategyChanged(): boolean {
+    try {
+      return resolveRowConfig(this.#live ?? this.#config).strategy !== this.#strategy
+    } catch {
+      // An invalid saved value is reported by the queued apply, so it must run.
+      return true
+    }
   }
 
   /** Bring the mounted driver in line with the live configuration. */
