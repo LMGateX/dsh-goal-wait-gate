@@ -6,6 +6,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-jobs'
+import { createDescendantBuckets, detachDescendant, indexDescendant, seedDescendantsOnce, type DescendantBuckets, type DescendantPredicate } from './descendants.ts'
 
 /**
  * Live subagent-origin agents by declared parent session id, one per realm.
@@ -18,49 +19,31 @@ import type {} from '@deepseek-ai/dsh-jobs'
  * a removed node can sit anywhere in any chain and re-seeding from the live
  * registry is always exact.
  */
-interface DescendantIndex {
-  readonly children: Map<string, Set<Agent>>
-  seeded: boolean
+const indexes = new WeakMap<Context, DescendantBuckets>()
+
+/**
+ * Which live agents this index holds.
+ *
+ * Only a session whose header names a parent and carries the subagent origin is
+ * a descendant; a fork shares the lineage field without that origin.
+ */
+const isSubagentDescendant: DescendantPredicate = agent => {
+  const { parentSession, origin } = agent.session.header
+  return parentSession !== undefined && origin === 'subagent'
 }
 
-const indexes = new WeakMap<Context, DescendantIndex>()
-
 /** The index for one realm, subscribing to the lifecycle the first time it is asked. */
-function indexFor(ctx: Context): DescendantIndex {
+function indexFor(ctx: Context): DescendantBuckets {
   const existing = indexes.get(ctx)
   if (existing !== undefined) return existing
-  const index: DescendantIndex = { children: new Map(), seeded: false }
+  const index = createDescendantBuckets()
   indexes.set(ctx, index)
-  ctx.on('agent/created', ({ agent }): undefined => { indexChild(index, agent) })
+  ctx.on('agent/created', ({ agent }): undefined => { indexDescendant(index, agent, isSubagentDescendant) })
   // A disposal this index knows is removed exactly, together with the subtree
   // only reachable through it; anything else re-seeds, because a node the index
   // never saw can sit anywhere in any chain.
-  ctx.on('agent/disposed', ({ agent }): undefined => { if (!detachChild(index, agent)) index.seeded = false })
+  ctx.on('agent/disposed', ({ agent }): undefined => { if (!detachDescendant(index, agent, isSubagentDescendant)) index.seeded = false })
   return index
-}
-
-/**
- * Drop one indexed descendant and the entries keyed by its session id.
- *
- * Once the node's own link to its parent is gone the walk can never reach that
- * bucket again, so the subtree goes with it; leaving it would retain live
- * grandchildren and their sets for the life of the realm. Answers whether the
- * index could have held the node at all.
- */
-function detachChild(index: DescendantIndex, agent: Agent): boolean {
-  const { parentSession, origin } = agent.session.header
-  if (parentSession === undefined || origin !== 'subagent') return true
-  const known = index.children.get(parentSession)?.delete(agent) === true
-  return index.children.delete(String(agent.session.id)) || known
-}
-
-/** Add one live subagent descendant under the session its header names. */
-function indexChild(index: DescendantIndex, agent: Agent): void {
-  const { parentSession, origin } = agent.session.header
-  if (parentSession === undefined || origin !== 'subagent') return
-  const bucket = index.children.get(parentSession)
-  if (bucket === undefined) index.children.set(parentSession, new Set([agent]))
-  else bucket.add(agent)
 }
 
 /**
@@ -82,11 +65,7 @@ function indexChild(index: DescendantIndex, agent: Agent): void {
  */
 export function hasLiveSubagents(ctx: Context, agent: Agent): boolean {
   const index = indexFor(ctx)
-  if (!index.seeded) {
-    index.children.clear()
-    for (const live of ctx.agents.list()) indexChild(index, live)
-    index.seeded = true
-  }
+  seedDescendantsOnce(index, () => ctx.agents.list(), isSubagentDescendant)
 
   const visited = new Set<string>()
   const pending = [String(agent.session.id)]

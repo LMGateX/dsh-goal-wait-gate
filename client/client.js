@@ -318,8 +318,9 @@ window.__ModuleLoader__.load({
         /**
          * Read the published status while the editor is open.
          *
-         * Polled rather than pushed: the driver can change on a strategy save, and
-         * the page must not depend on an event channel the host does not own.
+         * Read once when the card mounts and again whenever this page hands a save
+         * to the row: the driver can change on a strategy save, and the page must
+         * not depend on an event channel the host does not own.
          * @returns the last answer; undefined until one arrives, null when the
          *   route is unavailable.
          */

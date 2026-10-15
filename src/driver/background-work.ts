@@ -3,6 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-jobs'
 import type { SubagentRunId, SubagentRunInfo } from '@deepseek-ai/dsh-subagent'
+import { createDescendantBuckets, detachDescendant, indexDescendant, seedDescendantsOnce } from '../descendants.ts'
 import type { DriverPolicy } from './native-driver.ts'
 
 export interface BackgroundConfig { waitForJobs?: boolean; waitForSubagents?: boolean }
@@ -112,10 +113,16 @@ export function createBackgroundPolicy(ctx: Context, source: BackgroundConfigSou
    * chain: O(A * depth) with a temporary Set and array per candidate, paid up to
    * three times per goal round. A direct child that is live and owned already
    * answers the question, because a chain with a dead hop never counted either.
-   * The index is fed by the lifecycle events below and rebuilt when one is missed.
+   * The buckets are fed by the lifecycle events below and rebuilt when one is
+   * missed; the upkeep itself is shared with the gate's own index.
    */
-  const children = new Map<string, Set<Agent>>()
-  let indexed = false
+  const buckets = createDescendantBuckets()
+  /**
+   * Which live agents these buckets hold: every agent that names a parent. The
+   * origin and ownership tests belong to the query, which asks about a live
+   * owned direct child.
+   */
+  const hasParent = (agent: Agent): boolean => agent.session.header.parentSession !== undefined
   /**
    * Ancestor chains captured while indexing, so a disposal wakes exactly the
    * agents whose answer can change.
@@ -132,30 +139,11 @@ export function createBackgroundPolicy(ctx: Context, source: BackgroundConfigSou
     // for as long as its descendant lives, and a wake only ever needs the
     // ancestors that are still live anyway.
     ancestry.set(agent, ancestors(agent).map(ancestor => ancestor.id))
-    const parentId = agent.session.header.parentSession
-    if (parentId === undefined) return
-    const bucket = children.get(parentId)
-    if (bucket === undefined) children.set(parentId, new Set([agent]))
-    else bucket.add(agent)
-  }
-  /**
-   * Retire one indexed descendant, with the subtree that is only reachable
-   * through it: once the node's own link to its parent is gone, entries keyed
-   * by its session id can never be walked from any root again. Answers whether
-   * this index knew the node; an unknown removal re-seeds instead of guessing.
-   */
-  const detachAgent = (agent: Agent): boolean => {
-    const parentId = agent.session.header.parentSession
-    const known = parentId !== undefined && children.get(parentId)?.delete(agent) === true
-    return children.delete(String(agent.session.id)) || known
+    indexDescendant(buckets, agent, hasParent)
   }
   const hasDescendant = (agent: Agent): boolean => {
-    if (!indexed) {
-      children.clear()
-      for (const live of ctx.agents.list()) indexAgent(live)
-      indexed = true
-    }
-    for (const child of children.get(agent.id) ?? []) {
+    seedDescendantsOnce(buckets, () => ctx.agents.list(), hasParent)
+    for (const child of buckets.children.get(agent.id) ?? []) {
       if (child.session.header.origin !== 'subagent') continue
       if (ctx.agents.get(child.id) !== child) continue
       if (ctx.agents.isOwnedBy(child.id, agent)) return true
@@ -277,9 +265,9 @@ export function createBackgroundPolicy(ctx: Context, source: BackgroundConfigSou
         }))
         stops.push(ctx.on('agent/created', ({ agent }): undefined => { indexAgent(agent) }))
         stops.push(ctx.on('agent/disposed', ({ agent }): undefined => {
-          // A node this index knows is removed exactly; anything else re-seeds
-          // from the live registry instead of guessing what the index missed.
-          if (!detachAgent(agent)) indexed = false
+          // A node these buckets know is removed exactly; anything else
+          // re-seeds from the live registry instead of guessing what was missed.
+          if (!detachDescendant(buckets, agent, hasParent)) buckets.seeded = false
           const ids = ancestry.get(agent)
           if (ids === undefined) { notify(ctx.agents.list()); return }
           const chain: Agent[] = []
