@@ -119,6 +119,49 @@ Related evidence and ADR: ADR-0001、ADR-0002、docs/startup-driver.md
 
 结论：0.2.1-alpha.1 的 goal 侧改动是队列结算修正与 invariant 体系迁移，**不是**原生后台工作感知或调度 defer 契约；因此 activation 闸门与 opt-in startup 的必要性都不变。若上游开始原生检查 session 自有 job/subagent 存活，再按"候选调度 seam 的验收条件"复核并考虑停用重复闸门。
 
+## 复核记录：DSH 0.2.1-alpha.3
+
+按上文模板填写；只使用发布包内可核对的证据，不推断 master。
+
+```text
+DSH version / upstream commit or package evidence: 0.2.1-alpha.3 npm 发布包；driver 身份以 dsh-goal-round-driver 0.2.1-alpha.3 的 lib/index.js 为准（SHA-256 255483fb…953ec7f1ff92，Cordis 4.0.5-alpha.2），并与 alpha.2 发布物逐包对比
+Plugin version / commit: 0.4.16 分支 feat/background-aware-driver，本次 pin 变更尚未提交
+Changes in scheduling seam: 有。driver 在 idle、active+armed 且 checkpoint 完成后、round cap 之前，新增 await Promise.race([subagents.waitForChildren(agent), unloading.promise])（可选服务；未加载 subagent 时行为同 alpha.2），随后 readyAfterCheckpoint 复检；插件卸载时 resolve unloading。waitForChildren 本体在 alpha.2 已存在且函数体未变，变的只是调用方。
+Changes in phase / activation / revision / ownership: 无。activation 仍只由 create/resume/pause/complete/block/disarm 决定。
+Changes in edit and completion authority: 无（tool-goal 发布包未变）。
+Changes in model-visible goal context: 无（轮次提示未变）。
+Changes in jobs / subagent lifecycle: driver 仍不读取 jobs；jobs 三包仅改 job id 格式（<kind>-N → <kind>-<16 位 uuid>）、job 会话生命周期记录与通知截断文案。subagent 新增独立 preset 选择与恢复。
+Automated checks actually run and results: typecheck 通过；129/129 测试通过；check-startup-host 对真实 0.2.1-alpha.3 安装报 pinned 并类型检查通过；check-host-compat 0.2.1-alpha.3 通过；bundle/client/settings 检查通过。
+Isolated integration scenarios actually run and results: native fixture 上同一场景分别以 alpha.3 与 alpha.2 身份运行：alpha.3 在有 running 后代时 0 轮、0 新请求；alpha.2 同场景立即准入 1 轮。未运行真实模型会话。
+Skipped checks / limitations / unresolved risks: 未验证真实 profile 安装与 GUI；停靠（parked）后代不阻塞宿主是上游刻意行为，本插件 policy 则按"活着的后代 Agent"计入——该差异已在 alpha.4 复核中实测（见下一节）：停靠只剩 activation residency，没有 live Agent，因此不计入，语义差异仅限"停止跑动到 Agent 被回收/结算通知被消费"这段窗口。
+Decision: 新增 0.2.1-alpha.3 pin 并复现其 descendant join；activation 与 replacement 两种策略在该 pin 上均可用
+Related evidence and ADR: ADR-0001、ADR-0002、docs/startup-driver.md、src/driver/provenance.json
+```
+
+结论：0.2.1-alpha.3 首次让官方 driver 原生等待"进行中的后代"，因此 `replacement` 策略的移植增量只剩后台 Job；`waitForSubagents` 与该 pin 上游语义的重叠部分仅为下述窄窗口，默认值最终保持不变（见 alpha.4 复核与 ADR-0001 补充）。
+
+## 复核记录：DSH 0.2.1-alpha.4
+
+按上文模板填写；只使用发布包内可核对的证据，不推断 master。
+
+```text
+DSH version / upstream commit or package evidence: 0.2.1-alpha.4 npm 发布包；driver 身份以 dsh-goal-round-driver 0.2.1-alpha.4 的 lib/index.js 为准（SHA-256 255483fb…953ec7f1ff92，Cordis 4.0.5-alpha.2，与 alpha.3 发布物逐字节相同），并与 alpha.3 逐包对比 goal、goal-round-driver、tool-goal、agent、agent-loop、jobs、jobs-local、tool-jobs、subagent、tool-subagent
+Plugin version / commit: 0.4.17 分支 feat/dsh-0.2.1-alpha-support（本次提交；0.4.16 为未提交的基线）
+Changes in scheduling seam: 无。上述 continuation 相关发布包的 lib/ 内容除包自身版本号与发布时重写的兄弟包精确版本外逐字节相同（diff -r 只命中 package.json 的 version/devDependencies/peerDependencies）；alpha.4 的实质变更是插件市场与插件兼容性判定，未触及 continuation 路径。
+Changes in phase / activation / revision / ownership: 无。
+Changes in edit and completion authority: 无。
+Changes in model-visible goal context: 无。
+Changes in jobs / subagent lifecycle: alpha.3→alpha.4 无（jobs 三包与 subagent 执行 bundle 相同；driver 仍只等待"进行中的后代"，不读 jobs）。本轮顺带首次在真实 alpha.3+ 语义下实测出这条版本线的 subagent 面变更（rc.2 之后、alpha.3 起）：`ctx.subagents.startContinuable` 被 `startActivation(spec, delivery)` 取代；委派工具不再发布 `run_in_background`/`backgroundMode`，每次委派都是独立管理的 activation，工具也不再创建 `kind: 'subagent'` 的 Job；subagent 运行时要先有 `workingDirectory`，它依赖 `fs`（由 `dsh-fs-sandbox` 提供），后者依赖 `sandboxPolicy`，再依赖 `sandbox`。本插件 src/ 不使用这些 API，其 `job.kind === 'subagent'` 分支在 alpha.3+ 上因此永不命中（后代仍由 agents 注册表计入，等待语义不受影响）。
+New in this release（与 goal 无关但影响插件交付）: 插件兼容性判定改为 engines.dsh 优先，peers 字段更名 requirements（packages/boot/app-boot/src/plugin-compatibility.ts）。本插件未声明 engines.dsh，仍走 peer 规则；两个 @deepseek-ai/dsh-* peer 范围都接受 0.2.1-alpha.4，已在真实 profile 安装中验证。官方 dsh-base 自身也未声明 engines.dsh。本轮决定采用它：0.4.17 起声明 engines.dsh = >=0.1.7-alpha.2 <0.3（覆盖矩阵全部宿主），并让 check-host-compat 同时断言该范围——声明后该范围单独决定兼容性，不再叠加 peer 规则。
+Automated checks actually run and results: typecheck 通过；rc.2 开发宿主 136/136 通过（含 byte-identical republish 身份测试、事件路径 index upkeep 与并发 epoch 测试）；真实 0.2.1-alpha.4 宿主（隔离副本 + npm 装出的 @deepseek-ai/* 包）同一套 136 项中 134 通过、2 跳过、0 失败；check-startup-host 对真实 0.2.1-alpha.4 安装（npm 装出的 34 个包）报 pinned 0.2.1-alpha.4 且 src/ 类型检查通过；check-host-compat 0.2.1-alpha.4 通过（隔离副本内安装该版本、legacy 入口与测试类型检查通过、全部 peer range 接受预发布版本）；check:bundle/check:settings/check:client 通过；tsc -p tsconfig.build.json + copy-driver-assets 构建通过。
+Isolated integration scenarios actually run and results: 在 /tmp 的一次性 DSH home 内用真实 @deepseek-ai/dsh@0.2.1-alpha.4 CLI 跑 scripts/e2e-isolated.mjs，replacement 与 activation 两种策略各 12 项检查全绿：profile 安装成功、真实服务器启动、bundle 层接管 goal-round-driver 行、状态记录写明 host.distribution=0.2.1-alpha.4、cordis=4.0.5-alpha.2、driverSha256=255483fb…、无 fallback、状态路由可读。未运行真实模型会话。另在真实 alpha.4 realm 上实测了“子代理停靠”的实际语义：子代理回合结束后 live Agent 在 ≤250ms 内消失（subagents.list 仍为 1），停靠保留的是可寻址的 activation residency 而不是 Agent，因此本插件“活着的后代 Agent”判定不会被停靠无限按住，多守的只是“停止跑动→Agent 被回收/结算通知被消费”这段窗口。该结论已固化为 fixture 场景（parked activation 不 hold）。
+Skipped checks / limitations / unresolved risks: 未验证 GUI，也未在真实模型会话中验证目标可见性。native fixture 现在可以装配真实 alpha.3+ realm：按安装物挂载 sandbox-local → sandbox-policy → fs-sandbox → working-directory 这条 provider 链（缺任一环 subagent 插件都会停在 pending、ctx.subagents 为 undefined），并用 startActivation/startContinuable 二选一启动后台子代理，故同一份 suite 在 rc.2 与 alpha.4 上都能跑。仍有两项在 alpha.3+ 上跳过：该宿主不再发布 one-shot 后台工具模式，也没有对应的 disposal-backed subagent Job，那两个场景要驱动的模式本身不存在（fixture 现按宿主能力跳过，rc.2 上仍执行）。dsh-session-persistence-jsonl 自 alpha.3 起从默认导出改为 name/apply 功能插件，fixture 已能兼容两种形态。
+Decision: 新增 0.2.1-alpha.4 pin（与 alpha.3 同 fingerprint、同 behavior，仅新增身份行）；必要性结论与 alpha.3 相同——保留闸门，且 waitForSubagents 保持默认 true（实测不支持“停靠即卡死”的担忧）
+Related evidence and ADR: ADR-0001、ADR-0002、docs/startup-driver.md、src/driver/provenance.json
+```
+
+结论：0.2.1-alpha.4 对 goal continuation 面零改动，alpha.3 的结论原样成立——原生 driver 已覆盖"进行中的后代"，但仍完全不读后台 Job，闸门的必要性未消除；`waitForSubagents` 与该 pin 上游语义的重叠已实测为窄窗口，默认值保持不变，决策记入 ADR-0001 补充。真实 alpha.4 宿主上的 e2e 证明交付路径（安装/装载/host 身份/两种策略）成立，同一份 native suite 也在真实 alpha.4 realm 上全绿（含以真实 waitForChildren、alpha.3 与 alpha.2 两种身份各跑一次的 descendant join 场景）；但这些都不能替代"工作范围是否一致"的判断。
+
 ## 观察记录：插件页只渲染 bundle，不属于 bundle 的 Loader 行没有入口
 
 2026-10-05 于 DSH 0.2.1-alpha.1 复核：`dsh-client-ui-plugin-manager` 的 Plugins 面板以 `packages = listBundles().map(bundle => packageView(bundle, plugins))` 组卡，行只挂在自己 bundle 的卡片内；`dsh-plugin-manager` 的 `listBundles()` 对**非 bundle 依赖**只在它同时被选入 `dsh.profile.bundles` 时才列出（且以 `not-bundle` 错误呈现），而 `bundleManifest()` 只认声明了 `package.json.dsh.bundle.patch` 的包。因此"普通依赖 + 手写 `insert` 行"这种交付方式虽然能正常挂载，却在插件页完全不可见，也没有启停入口；设置里的只读「插件列表」虽然直接读 Loader 因而能看到该行，但那是诊断视图而非管理入口。

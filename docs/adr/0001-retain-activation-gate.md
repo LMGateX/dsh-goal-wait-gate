@@ -51,3 +51,14 @@ status: accepted
 后续[Driver 替换与多策略配置研究](<../research/goal-driver-replacement.md>)另有 32 个隔离原生场景，支持 version-pinned native adaptation 在 idle/armed 语义上的 locality；但接管了 scheduler 的兼容/通知/所有权责任，pending-notice 与最终 admission 仍有边界。它是需要新决策的替代路线，不把本 ADR 的轻量桥接默认悄悄改成 forked driver，也尚未发布模式选择或热切换功能。
 
 [ADR 0002](<0002-opt-in-pinned-driver.md>) 接受独立、版本固定、显式 opt-in 的启动 owner；不 supersede 本记录的 legacy root/default 决定。模式选择仅用于直接 root bootstrap，未部署、未提供页面或热切换。
+
+## 补充（2026-10-15）：0.2.1-alpha.3 / alpha.4 复核后的判定单位
+
+上游自 `0.2.1-alpha.3` 起让官方 driver 原生等待“进行中的后代”（`waitForChildren`：join 仍在推进的后代，刻意让停靠的 idle inbox 保持常驻）。本记录的决定不变，但两套策略的差异范围本轮在真实宿主上实测清楚：
+
+1. 本插件的判定单位是**活着的后代 Agent**（live activation epoch），不是“后代当前是否在跑”。
+2. 子代理回合结束后，宿主保留的是可寻址的 activation residency，而不是 live Agent（实测 ≤250ms 内从 `agents.list` 消失，`subagents.list` 仍为 1）。因此停靠不会被无限期按住，也不存在“子代理一停靠 goal 就卡死”。
+3. 两套策略的语义差异只剩“子代理停止跑动 → Agent 被回收 / 结算通知被父 agent 消费”这段窗口。在这段窗口内不释放是有意的：结算通知尚未被消费时插入一轮会与回报竞争。
+4. 结论：`waitForSubagents` 保持默认 `true`；要与上游完全一致（只等推进中的后代）的用户显式设 `false`。该契约由 fixture 场景“parked activation 不 hold”锁定，`0.2.1-alpha.3+` 上 `replacement` 策略的必需增量仍然只是后台 Job。
+
+证据与逐项复核见[观察清单](<../upstream-goal-watch.md>)的 0.2.1-alpha.3 / alpha.4 记录。
