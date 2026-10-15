@@ -1,6 +1,6 @@
 {
   "name": "dsh-goal-wait-gate",
-  "version": "0.4.16",
+  "version": "0.4.17",
   "description": "DSH plugin that withholds automatic goal continuation while the owning agent still has live background work",
   "type": "module",
   "license": "MIT",
@@ -46,7 +46,8 @@
     "docs/startup-driver.md"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22",
+    "dsh": ">=0.1.7-alpha.2 <0.3"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node scripts/copy-driver-assets.ts",

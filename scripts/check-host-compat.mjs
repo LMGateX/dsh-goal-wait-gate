@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url'
 import semver from 'semver'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const DEFAULT_HOSTS = ['0.1.7-alpha.2', '0.1.7-rc.2', '0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-alpha.2']
+const DEFAULT_HOSTS = ['0.1.7-alpha.2', '0.1.7-rc.2', '0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-alpha.2', '0.2.1-alpha.3', '0.2.1-alpha.4']
 const HOSTS = process.argv.slice(2).length > 0 ? process.argv.slice(2) : DEFAULT_HOSTS
 const DSH_PACKAGES = [
   '@deepseek-ai/dsh-agent',
@@ -105,6 +105,12 @@ for (const host of HOSTS) {
   console.log('host ' + host + ': typechecking legacy entry and legacy tests only')
   run(TSC, ['-p', tsconfigPath], hostDirectory)
 
+  // dsh-app-boot reads an own `engines.dsh` first and ignores the dsh peers
+  // entirely when it is present, so that range has to accept every host here.
+  const dshEngine = pkg.engines?.dsh
+  if (typeof dshEngine === 'string' && !semver.satisfies(host, dshEngine, { includePrerelease: true })) {
+    failures.push('engines.dsh: range "' + dshEngine + '" rejects ' + host)
+  }
   for (const [name, range] of Object.entries(pkg.peerDependencies)) {
     const version = name === '@deepseek-ai/cordis' ? CORDIS_VERSION : host
     // Mirror dsh-app-boot's evaluatePluginCompatibility: the loader refuses a

@@ -32,13 +32,13 @@ export const supportedHosts: readonly HostProfile[] = [
     distribution: '0.2.0-rc.2',
     cordis: '4.0.4',
     driverSha256: '3bca01a2e87de1683fa8b55ad54688eefc4e366c971c20e9afd654db3b5ab450',
-    driver: { removeCancelledQueuedMessage: false },
+    driver: { removeCancelledQueuedMessage: false, joinsProgressingDescendants: false },
   },
   {
     distribution: '0.2.1-alpha.1',
     cordis: '4.0.5-alpha.1',
     driverSha256: '68ed09208a7abe4e8722bc0e6ac666383046ed37dc8a4e6a0795234317c69cf8',
-    driver: { removeCancelledQueuedMessage: true },
+    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: false },
   },
   // 0.2.1-alpha.2 moves the distribution version while publishing the very same
   // native goal driver bundle (identical SHA-256, identical Cordis), so the
@@ -47,7 +47,25 @@ export const supportedHosts: readonly HostProfile[] = [
     distribution: '0.2.1-alpha.2',
     cordis: '4.0.5-alpha.1',
     driverSha256: '68ed09208a7abe4e8722bc0e6ac666383046ed37dc8a4e6a0795234317c69cf8',
-    driver: { removeCancelledQueuedMessage: true },
+    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: false },
+  },
+  // 0.2.1-alpha.3 republishes the driver bundle with the descendant join: a
+  // round is reserved only after the agent's progressing descendants settle.
+  // The port grows one identity row and one behavior flag.
+  {
+    distribution: '0.2.1-alpha.3',
+    cordis: '4.0.5-alpha.2',
+    driverSha256: '255483fbf86bed0dac5f641d89684de1933695e2c034475b2fa3953ec7f1ff92',
+    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true },
+  },
+  // 0.2.1-alpha.4 moves the distribution version again while republishing that
+  // very same driver bundle (identical SHA-256, identical Cordis), so the
+  // descendant join carries over unchanged; only the identity grows a row.
+  {
+    distribution: '0.2.1-alpha.4',
+    cordis: '4.0.5-alpha.2',
+    driverSha256: '255483fbf86bed0dac5f641d89684de1933695e2c034475b2fa3953ec7f1ff92',
+    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true },
   },
 ]
 

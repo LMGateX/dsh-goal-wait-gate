@@ -26,6 +26,19 @@
       "companion": null,
       "behavior": "Additionally settles an unclaimed queued round at idle by removing its inbox message, independent of the round pause; the ./invariant companion subpath is no longer published.",
       "sourceBasis": "Exact published package bundle; no upstream revision inferred from master."
+    },
+    {
+      "package": "@deepseek-ai/dsh-goal-round-driver",
+      "version": "0.2.1-alpha.3",
+      "license": "MIT",
+      "copyright": "Copyright (c) 2026 DeepSeek",
+      "repository": "https://github.com/deepseek-ai/deepseek-harness",
+      "repositoryDirectory": "packages/goal/goal-round-driver",
+      "artifact": "lib/index.js",
+      "sha256": "255483fbf86bed0dac5f641d89684de1933695e2c034475b2fa3953ec7f1ff92",
+      "companion": null,
+      "behavior": "Additionally joins the agent's progressing descendants through the optional subagent service before reserving a round, and stops waiting when the plugin unloads; the queued-round settlement behavior of 0.2.1-alpha.1 is unchanged.",
+      "sourceBasis": "Exact published package bundle; no upstream revision inferred from master."
     }
   ],
   "selection": "The host profile is matched from the resolved bundle version and SHA-256 together; the same port reproduces the pinned behavior of exactly one published artifact, and an unpinned distribution is refused before any driver is mounted.",
@@ -38,7 +51,8 @@
     "Behavior differences between pinned bundles are explicit profile data, never inferred from a version string.",
     "Optional synchronous policy after native housekeeping and round cap, and in both pre-step reservation fences.",
     "Policy subscription inside composite effect after native listeners and mount disarm.",
-    "Global stop latch, synchronous all-state revocation and cancellation, policy unsubscription before drain, shared idempotent stop promise, and final composite-effect cleanup."
+    "Global stop latch, synchronous all-state revocation and cancellation, policy unsubscription before drain, shared idempotent stop promise, and final composite-effect cleanup.",
+    "Structural read of the optional 0.2.1-alpha.3 descendant join, which earlier pinned hosts do not publish; the join is selected by artifact identity and released by the stop latch."
   ],
   "preserved": [
     "Published queued/claimed retirement and cancellation behavior of each pinned bundle, selected by artifact identity; no master behavior imported.",

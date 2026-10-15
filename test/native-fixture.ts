@@ -11,12 +11,20 @@ import Goals from '@deepseek-ai/dsh-goal'
 import Jobs from '@deepseek-ai/dsh-jobs-local'
 import * as ToolJobs from '@deepseek-ai/dsh-tool-jobs'
 import * as ToolGoal from '@deepseek-ai/dsh-tool-goal'
-import Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import * as JsonlBackend from '@deepseek-ai/dsh-session-persistence-jsonl'
 import Subagents from '@deepseek-ai/dsh-subagent'
 import Query from '@deepseek-ai/dsh-session-query-sqlite'
 import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 import { existsSync } from 'node:fs'
+
+/**
+ * The JSONL persistence backend in its mountable shape. 0.2.1-alpha.3
+ * republishes it as a functional plugin (`name`/`apply`) and stops exporting the
+ * rc.2 default, so the shape is chosen at runtime instead of at link time; the
+ * declared default type still describes the configuration mounted below.
+ */
+const Persistence = (JsonlBackend.default ?? JsonlBackend) as unknown as typeof JsonlBackend.default
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -39,6 +47,64 @@ async function hostInvariantPlugins(): Promise<Plugin<void>[]> {
   if (existsSync(join(driver, '..', 'dsh-invariants', 'package.json'))) plugins.push((await import(invariants)).default as Plugin<void>)
   if (existsSync(join(driver, 'lib', 'invariant.js'))) plugins.push(await import(driverInvariant) as Plugin<void>)
   return plugins
+}
+
+/**
+ * The provider chain later pinned hosts require before the subagent runtime can
+ * apply at all: 0.2.1-alpha.3 makes that runtime wait for `workingDirectory`,
+ * which waits for the filesystem provider, which waits for the sandbox policy
+ * and the sandbox. Only packages the installation actually publishes are
+ * mounted, so the realm keeps matching the host under test; the pinned
+ * development host publishes none of them and mounts nothing extra.
+ */
+async function mountHostProviders(ctx: Context): Promise<void> {
+  const chain: readonly (readonly [string, unknown])[] = [
+    ['@deepseek-ai/dsh-sandbox-local', undefined],
+    ['@deepseek-ai/dsh-sandbox-policy', {mode: 'workspace-write', workspaceRoot: process.cwd()}],
+    ['@deepseek-ai/dsh-fs-sandbox', undefined],
+    ['@deepseek-ai/dsh-working-directory', undefined],
+  ]
+  for (const [specifier, config] of chain) {
+    // Non-literal on purpose: these packages do not exist on every pinned host,
+    // and a literal specifier would fail type resolution even where the guard
+    // never imports it.
+    let manifest: string
+    try { manifest = fileURLToPath(import.meta.resolve(specifier + '/package.json')) } catch { continue }
+    if (!existsSync(manifest)) continue
+    const plugin = ((await import(specifier)) as {default: Plugin}).default
+    if (config === undefined) await ctx.plugin(plugin)
+    else await ctx.plugin(plugin, config as never)
+  }
+}
+
+/** One background-child request, as the host under test declares it. */
+export type BackgroundChildSpec = Parameters<Context['subagents']['startContinuable']>[0]
+
+/**
+ * Start one background child through whichever activation API the host
+ * publishes. 0.2.1-alpha.3 replaces `startContinuable` with `startActivation`
+ * and spells out the result recipient; both resolve at initial inbox
+ * acceptance, so every scenario observes the same publication boundary.
+ */
+export async function startBackgroundChild(ctx: Context, spec: BackgroundChildSpec): Promise<void> {
+  const runtime = ctx.subagents as unknown as {
+    startActivation?: (request: BackgroundChildSpec & {delivery: 'parent'}) => Promise<unknown>
+    startContinuable?: (request: BackgroundChildSpec) => Promise<unknown>
+  }
+  if (runtime.startActivation !== undefined) { await runtime.startActivation({...spec, delivery: 'parent'}); return }
+  if (runtime.startContinuable !== undefined) { await runtime.startContinuable(spec); return }
+  throw new Error('this host publishes neither startActivation nor startContinuable')
+}
+
+/**
+ * Whether the installed delegation tool still publishes the one-shot background
+ * mode. 0.2.1-alpha.3 drops `run_in_background` (and the tool's
+ * `backgroundMode` configuration) and turns every delegation into an
+ * independently managed activation, so the scenarios that drive that mode are
+ * scoped to the older pins.
+ */
+export function publishesOneShotBackgroundTool(ctx: Context): boolean {
+  return typeof (ctx.subagents as unknown as {startActivation?: unknown}).startActivation !== 'function'
 }
 
 export interface Call { agent: Agent; index: number; signal: AbortSignal | undefined }
@@ -85,6 +151,7 @@ export class NativeFixture {
       this.scratch = await mkdtemp(join(tmpdir(), 'goal-driver-synthetic-'))
       await ctx.plugin(Persistence, {root: join(this.scratch, 'sessions'), compression: 'none'})
       await ctx.plugin(Query, {path: ':memory:', openAt: 'never'})
+      await mountHostProviders(ctx)
       await ctx.plugin(Subagents)
       await ctx.plugin(Spawn)
       await ctx.plugin(ToolSubagent, {provider: 'spawn', toolName: 'subagent', backgroundMode: 'one-shot', modelSelectionSettings: false, maxDepth: 2})

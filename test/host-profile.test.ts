@@ -4,7 +4,7 @@ import crypto from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import fsPromises from 'node:fs/promises'
 import { createRequire, syncBuiltinESMExports } from 'node:module'
-import { NativeFixture } from './native-fixture.ts'
+import { NativeFixture, startBackgroundChild } from './native-fixture.ts'
 import { getStartupState } from '../src/startup.ts'
 import { matchHostProfile, supportedHosts, type HostFacts, type HostProfile } from '../src/driver/host-version.ts'
 import * as NativeDriver from '@deepseek-ai/dsh-goal-round-driver'
@@ -17,6 +17,8 @@ const profileFor = (distribution: string): HostProfile => {
 const rc2 = profileFor('0.2.0-rc.2')
 const alpha = profileFor('0.2.1-alpha.1')
 const alpha2 = profileFor('0.2.1-alpha.2')
+const alpha3 = profileFor('0.2.1-alpha.3')
+const alpha4 = profileFor('0.2.1-alpha.4')
 
 /** Pinned profile of the host this suite really runs on; the same suite must pass on each. */
 function detectInstalledProfile(): HostProfile {
@@ -76,9 +78,31 @@ async function cancelQueuedRound(h: NativeFixture): Promise<{ parked: boolean }>
 }
 
 test('artifact identity selects the exact ported behavior of that pinned host', () => {
-  assert.deepEqual(matchHostProfile(facts(rc2)).driver, { removeCancelledQueuedMessage: false })
-  assert.deepEqual(matchHostProfile(facts(alpha)).driver, { removeCancelledQueuedMessage: true })
+  assert.deepEqual(matchHostProfile(facts(rc2)).driver, { removeCancelledQueuedMessage: false, joinsProgressingDescendants: false })
+  assert.deepEqual(matchHostProfile(facts(alpha)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: false })
+  assert.deepEqual(matchHostProfile(facts(alpha2)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: false })
+  assert.deepEqual(matchHostProfile(facts(alpha3)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true })
+  assert.deepEqual(matchHostProfile(facts(alpha4)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true })
   assert.equal(matchHostProfile(facts(alpha, { '@deepseek-ai/dsh-session': alpha.distribution })).distribution, '0.2.1-alpha.1')
+})
+
+test('a byte-identical republish is a new identity with the same ported behavior', () => {
+  // 0.2.1-alpha.2 republishes the alpha.1 driver and 0.2.1-alpha.4 republishes
+  // the alpha.3 driver; each is still its own pinned identity, and a host that
+  // self-reports one of them must be admitted with that artifact's behavior.
+  for (const [republish, original] of [[alpha2, alpha], [alpha4, alpha3]] as const) {
+    assert.notEqual(republish.distribution, original.distribution)
+    assert.equal(republish.driverSha256, original.driverSha256)
+    assert.equal(republish.cordis, original.cordis)
+    assert.deepEqual(republish.driver, original.driver)
+    assert.deepEqual(matchHostProfile(facts(republish)).driver, original.driver)
+  }
+  // The fingerprint identifies the artifact, the version identifies the
+  // distribution: a republish under an unpinned version is still refused.
+  assert.throws(
+    () => matchHostProfile({ ...facts(alpha4), versions: { ...facts(alpha4).versions, '@deepseek-ai/dsh-goal-round-driver': '0.2.1-alpha.5' } }),
+    /unsupported @deepseek-ai\/dsh-goal-round-driver version 0\.2\.1-alpha\.5/,
+  )
 })
 
 test('an unpinned distribution version is refused instead of borrowing a port', () => {
@@ -156,4 +180,87 @@ test('a version match without the pinned bundle fingerprint is refused at startu
     assert.equal(getStartupState(h.ctx), undefined)
     assert.equal(h.ctx.registry.has(NativeDriver), false)
   } finally { t.mock.restoreAll(); syncBuiltinESMExports(); await h.dispose() }
+})
+
+/**
+ * Publish the 0.2.1-alpha.3 subagent seam over the installed (older) subagent
+ * package: a real installation of that distribution ships it, while this pinned
+ * development host predates it. The join resolves only once every delegated
+ * child has stopped progressing.
+ */
+function publishDescendantJoin(ctx: import('@deepseek-ai/cordis').Context): void {
+  const runtime = ctx.get('subagents') as unknown as { waitForChildren?: (parent: import('@deepseek-ai/dsh-agent').Agent) => Promise<boolean> }
+  runtime.waitForChildren = async (parent: import('@deepseek-ai/dsh-agent').Agent): Promise<boolean> => {
+    let joined = false
+    for (const agent of ctx.agents.list()) {
+      if (agent === parent || agent.session.header.parentSession === undefined) continue
+      joined = true
+      await agent.whenIdle()
+    }
+    return joined
+  }
+}
+
+/**
+ * One real scenario on two pinned identities: an armed goal on a parent that
+ * delegated to a child which is still progressing. The background policy is
+ * switched off in both arms, so only the port's own published behavior is
+ * observed; only 0.2.1-alpha.3 publishes the descendant join.
+ */
+async function progressingDescendant(t: TestContext, profile: HostProfile): Promise<{ h: NativeFixture; release: () => void }> {
+  simulateHost(t, profile)
+  const release = Promise.withResolvers<void>()
+  let child: import('@deepseek-ai/dsh-agent').Agent | undefined
+  const h = await new NativeFixture({
+    children: true,
+    config: { strategy: 'replacement', waitForJobs: false, waitForSubagents: false },
+    beforeStartup: async ctx => { publishDescendantJoin(ctx) },
+    onCall: async (fixture, call) => {
+      if (call.agent === fixture.agent && call.index === 1) {
+        void startBackgroundChild(fixture.ctx, {
+          provider: 'spawn',
+          label: 'Synthetic descendant',
+          request: { parent: fixture.agent, prompt: [{ type: 'text', text: 'Synthetic descendant' }], maxDepth: 2 },
+          signal: new AbortController().signal,
+        })
+        // The delegation materializes asynchronously. Hold the human turn open
+        // until the child is a live running Agent, so the idle drive that
+        // follows meets a descendant rather than an empty registry.
+        await fixture.until(() => child !== undefined, 'delegated child materialized')
+        return
+      }
+      if (call.agent !== fixture.agent) {
+        child = call.agent
+        // The predicate is already satisfied by the time this call blocks, so
+        // the harness has to be told to re-check it.
+        fixture.changed()
+        await release.promise
+      }
+    },
+  }).initialize()
+  h.human()
+  h.createGoal()
+  await h.until(() => h.agent.status === 'idle', 'idle parent beside a progressing descendant')
+  await h.ctx.sessions.flush(h.agent.session)
+  await h.settle()
+  return { h, release: () => release.resolve() }
+}
+
+test('a pinned 0.2.1-alpha.3 host withholds the round while a descendant progresses', async t => {
+  const run = await progressingDescendant(t, alpha3)
+  try {
+    assert.equal(run.h.goal?.activation, 'armed')
+    assert.equal(run.h.goal?.roundsStarted, 0)
+    assert.equal(run.h.mainCalls, 1)
+    run.release()
+    await run.h.until(() => (run.h.goal?.roundsStarted ?? 0) >= 1, 'round admitted after the descendant settled')
+  } finally { run.release(); t.mock.restoreAll(); syncBuiltinESMExports(); await run.h.dispose() }
+})
+
+test('an earlier pinned host without the join reserves the round while a descendant progresses', async t => {
+  const run = await progressingDescendant(t, alpha2)
+  try {
+    assert.equal(run.h.goal?.activation, 'armed')
+    await run.h.until(() => run.h.goal?.roundsStarted === 1, 'round admitted beside a progressing descendant')
+  } finally { run.release(); t.mock.restoreAll(); syncBuiltinESMExports(); await run.h.dispose() }
 })

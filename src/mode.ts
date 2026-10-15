@@ -33,7 +33,7 @@ import { resolveRowConfig, type ResolvedGateConfig, type ResolvedRowConfig, type
 import { GoalWaitGate } from './gate.ts'
 import { createBackgroundPolicy } from './driver/background-work.ts'
 import { assertHostVersion } from './driver/host-version.ts'
-import { installNativeDriver } from './driver/native-driver.ts'
+import { installNativeDriver, type DriverBehavior } from './driver/native-driver.ts'
 import { publishLiveRow } from './status-route.ts'
 import { writeGateStatus, type MountedDriver } from './status.ts'
 
@@ -51,7 +51,7 @@ export interface StrategyOptions {
   /** Import the host's driver module through this function instead of the real one. */
   readonly importNativeDriver?: () => Promise<NativeDriverModule>
   /** Resolve the pinned host profile through this function instead of the real one. */
-  readonly detectHost?: (ctx: Context) => Promise<{ distribution: string; driver: { removeCancelledQueuedMessage: boolean } }>
+  readonly detectHost?: (ctx: Context) => Promise<{ distribution: string; driver: DriverBehavior }>
   /** How long a child mount may stay pending before it is reported, in ms. */
   readonly mountTimeoutMs?: number
   /** How long one child teardown may hold the serialized apply queue, in ms. */

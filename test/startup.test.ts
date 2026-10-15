@@ -1,6 +1,6 @@
 import test, {mock} from 'node:test'
 import assert from 'node:assert/strict'
-import { NativeFixture } from './native-fixture.ts'
+import { NativeFixture, publishesOneShotBackgroundTool, startBackgroundChild } from './native-fixture.ts'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { SubagentRunInfo, SubagentRunEndInfo } from '@deepseek-ai/dsh-subagent'
@@ -24,7 +24,7 @@ test('replacement does not spend a goal round while a native local child is live
   let started = false
   const h = await new NativeFixture({children: true, onCall: async (fixture, call) => {
     if (call.agent === fixture.agent && call.index === 1) {
-      await fixture.ctx.subagents.startContinuable({provider: 'spawn', label: 'Synthetic child', request: {parent: fixture.agent, prompt: [{type: 'text', text: 'Synthetic child work'}], maxDepth: 2}, signal: new AbortController().signal})
+      await startBackgroundChild(fixture.ctx, {provider: 'spawn', label: 'Synthetic child', request: {parent: fixture.agent, prompt: [{type: 'text', text: 'Synthetic child work'}], maxDepth: 2}, signal: new AbortController().signal})
       started = true
     } else if (call.agent !== fixture.agent) await release.promise
   }}).initialize()
@@ -52,7 +52,7 @@ test('local run epoch holds across genuine detach until native disposal and noti
     },
     onCall: async (fixture, call) => {
       if (call.agent === fixture.agent && call.index === 1) {
-        await fixture.ctx.subagents.startContinuable({provider: 'spawn', label: 'Synthetic gap child', request: {parent: fixture.agent, prompt: [{type: 'text', text: 'Synthetic child work'}], maxDepth: 2}, signal: new AbortController().signal})
+        await startBackgroundChild(fixture.ctx, {provider: 'spawn', label: 'Synthetic gap child', request: {parent: fixture.agent, prompt: [{type: 'text', text: 'Synthetic child work'}], maxDepth: 2}, signal: new AbortController().signal})
         started = true
       } else if (call.agent !== fixture.agent) await finishChild.promise
     },
@@ -100,7 +100,7 @@ test('failed native first acceptance closes a started epoch without inventing a 
     onCall: async (fixture, call) => {
       if (call.agent === fixture.agent && call.index === 1) {
         try {
-          await fixture.ctx.subagents.startContinuable({provider: 'spawn', label: 'Synthetic failed acceptance', request: {parent: fixture.agent, prompt: [{type: 'text', text: 'Synthetic child work'}], maxDepth: 2}, signal: cancel.signal})
+          await startBackgroundChild(fixture.ctx, {provider: 'spawn', label: 'Synthetic failed acceptance', request: {parent: fixture.agent, prompt: [{type: 'text', text: 'Synthetic child work'}], maxDepth: 2}, signal: cancel.signal})
         } catch { failed = true }
       }
     },
@@ -149,7 +149,7 @@ test('old notice and old run end cannot release a later cold-resumed epoch with 
     },
     onCall: async (fixture, call) => {
       if (call.agent === fixture.agent && call.index === 1) {
-        await fixture.ctx.subagents.startContinuable({provider: 'spawn', label: 'Synthetic repeated epoch', request: {parent: fixture.agent, prompt: [{type: 'text', text: 'Synthetic A'}], maxDepth: 2}, signal: new AbortController().signal})
+        await startBackgroundChild(fixture.ctx, {provider: 'spawn', label: 'Synthetic repeated epoch', request: {parent: fixture.agent, prompt: [{type: 'text', text: 'Synthetic A'}], maxDepth: 2}, signal: new AbortController().signal})
         initialStarted = true
       } else if (call.agent !== fixture.agent) { childCalls++; await (childCalls === 1 ? finishA.promise : finishB.promise) }
     },
@@ -183,11 +183,11 @@ test('nested runtime ownership holds the root while its idle resident child owns
   let started = false
   const h = await new NativeFixture({children: true, onCall: async (fixture, call) => {
     if (call.agent === fixture.agent && call.index === 1) {
-      await fixture.ctx.subagents.startContinuable({provider: 'spawn', label: 'Synthetic middle', request: {parent: fixture.agent, prompt: [{type: 'text', text: 'Synthetic middle'}], maxDepth: 3}, signal: new AbortController().signal})
+      await startBackgroundChild(fixture.ctx, {provider: 'spawn', label: 'Synthetic middle', request: {parent: fixture.agent, prompt: [{type: 'text', text: 'Synthetic middle'}], maxDepth: 3}, signal: new AbortController().signal})
       started = true
     } else if (call.agent.session.header.parentSession === fixture.agent.id && call.index === 1) {
       middle = call.agent
-      await fixture.ctx.subagents.startContinuable({provider: 'spawn', label: 'Synthetic grandchild', request: {parent: call.agent, prompt: [{type: 'text', text: 'Synthetic grandchild'}], maxDepth: 3}, signal: new AbortController().signal})
+      await startBackgroundChild(fixture.ctx, {provider: 'spawn', label: 'Synthetic grandchild', request: {parent: call.agent, prompt: [{type: 'text', text: 'Synthetic grandchild'}], maxDepth: 3}, signal: new AbortController().signal})
     } else if (call.agent !== fixture.agent && call.agent !== middle) await finish.promise
   }}).initialize()
   try {
@@ -210,7 +210,7 @@ test('durable subagent lineage without runtime ownership does not hold an indepe
   } finally { await other.dispose(); await h.dispose() }
 })
 
-for (const waitForJobs of [true, false]) test('one-shot end retains subagent Job barrier with waitForJobs=' + waitForJobs, async () => {
+for (const waitForJobs of [true, false]) test('one-shot end retains subagent Job barrier with waitForJobs=' + waitForJobs, async t => {
   const detached = Promise.withResolvers<void>(), finishDispose = Promise.withResolvers<void>()
   let ends = 0
   const h = await new NativeFixture({children: true, config: {strategy: 'replacement', waitForJobs},
@@ -219,6 +219,11 @@ for (const waitForJobs of [true, false]) test('one-shot end retains subagent Job
     onCall: (fixture, call) => call.agent === fixture.agent && call.index === 1 ? {tool: {name: 'subagent', args: {description: 'Synthetic one-shot', prompt: 'Synthetic work', run_in_background: true}}} : undefined,
   }).initialize()
   try {
+    // 0.2.1-alpha.3 removed the one-shot background tool mode this scenario
+    // drives, along with the disposal-backed subagent Job it installed. The
+    // delegation that host publishes instead is covered by the activation
+    // scenarios above, which hold the parent through the same policy.
+    if (!publishesOneShotBackgroundTool(h.ctx)) { t.skip('this host publishes no one-shot background tool mode'); return }
     h.human(); h.createGoal(); await detached.promise
     await h.until(() => h.agent.status === 'idle' && h.toolResults.some(result => result.name === 'subagent'))
     await h.ctx.sessions.flush(h.agent.session); await h.settle()
@@ -228,6 +233,28 @@ for (const waitForJobs of [true, false]) test('one-shot end retains subagent Job
     finishDispose.resolve(); await h.until(() => h.goal?.phase === 'blocked')
     assert.equal(h.goal?.roundsStarted, 1)
   } finally { finishDispose.resolve(); await h.dispose() }
+})
+
+test('a parked activation that keeps no live agent does not hold the goal', async t => {
+  let started = false
+  const h = await new NativeFixture({children: true, config: {strategy: 'replacement'}, onCall: async (fixture, call) => {
+    if (call.agent === fixture.agent && call.index === 1) {
+      await startBackgroundChild(fixture.ctx, {provider: 'spawn', label: 'Synthetic parked child', request: {parent: fixture.agent, prompt: [{type: 'text', text: 'Synthetic parked work'}], maxDepth: 2}, signal: new AbortController().signal})
+      started = true
+    }
+  }}).initialize()
+  try {
+    h.human(); h.createGoal()
+    await h.until(() => started, 'the delegation was accepted')
+    await h.settle()
+    await new Promise(resolve => setTimeout(resolve, 300))
+    // 0.2.1-alpha.3 keeps an idle child addressable without keeping an Agent:
+    // the residency parks, the live registry drops it, and the gate must let
+    // the goal round through. A host that keeps the child materialized is
+    // still holding real work, so this scenario does not apply to it.
+    if (!h.ctx.agents.list().every(agent => agent === h.agent)) { t.skip('this host keeps the idle child materialized'); return }
+    await h.until(() => (h.goal?.roundsStarted ?? 0) >= 1, 'the round admitted beside a parked activation')
+  } finally { await h.dispose() }
 })
 
 test('goal creation on an already idle parent is gated without a stopping hook', async () => {

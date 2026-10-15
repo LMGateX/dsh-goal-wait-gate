@@ -221,7 +221,7 @@ async function applyStrategyOn(config: Record<string, unknown>, options: Strateg
   const space = realm()
   await applyStrategy(space.ctx, resolveRowConfig(config), {
     importNativeDriver: async () => nativeStandIn,
-    detectHost: async () => ({ distribution: '0.2.1-alpha.1', driver: { removeCancelledQueuedMessage: true } }),
+    detectHost: async () => ({ distribution: '0.2.1-alpha.1', driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: false } }),
     ...options,
   })
   return space
@@ -352,7 +352,7 @@ test('a changed live strategy swaps the driver in place, with exactly one driver
   }
   const handle = await applyStrategy(space.ctx, live, {
     importNativeDriver: async () => nativeStandIn,
-    detectHost: async () => ({ distribution: '0.2.1-alpha.1', driver: { removeCancelledQueuedMessage: true } }),
+    detectHost: async () => ({ distribution: '0.2.1-alpha.1', driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: false } }),
   })
   assert.equal(handle.current(), 'activation')
   assert.deepEqual(space.mounted, [NATIVE_DRIVER_NAME])

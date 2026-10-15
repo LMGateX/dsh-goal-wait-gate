@@ -1,5 +1,5 @@
 // Derived from the published @deepseek-ai/dsh-goal-round-driver bundles
-// 0.2.0-rc.2 and 0.2.1-alpha.1. Copyright (c) 2026 DeepSeek. MIT; see
+// 0.2.0-rc.2, 0.2.1-alpha.1, and 0.2.1-alpha.3. Copyright (c) 2026 DeepSeek. MIT; see
 // UPSTREAM-LICENSE.txt and provenance.json.
 import { isDeepStrictEqual } from 'node:util';
 import type { Context } from '@deepseek-ai/cordis';
@@ -27,6 +27,15 @@ export interface DriverPolicy {
 export interface DriverBehavior {
 	/** 0.2.1-alpha.1 settles an unclaimed queued round by removing its inbox message. */
 	readonly removeCancelledQueuedMessage: boolean;
+	/** 0.2.1-alpha.3 reserves a round only after the agent's progressing descendants settle. */
+	readonly joinsProgressingDescendants: boolean;
+}
+/**
+* The 0.2.1-alpha.3 subagent seam this port joins before reserving a round.
+* Earlier hosts do not publish it, so it is read structurally and never imported.
+*/
+interface ProgressingDescendants {
+	waitForChildren(parent: Agent): Promise<boolean>;
 }
 
 interface Attempt extends Pick<GoalMessageSource, 'goalId' | 'revision' | 'round'> {
@@ -72,6 +81,8 @@ function renderThrown(value: unknown): string {
 /** Install automatic same-session continuation and its race fences. */
 export function installNativeDriver(ctx: Context, policy: DriverPolicy | undefined, behavior: DriverBehavior): { stop(): Promise<void> } {
 	const states = new Map<Agent, DriverState>();
+	// Releases a drive still joining descendants when the driver stops.
+	const unloading = Promise.withResolvers<void>();
 	let stopping = false;
 	let stopPromise: Promise<void> | undefined;
 	let unsubscribe: (() => void) | undefined;
@@ -145,6 +156,14 @@ export function installNativeDriver(ctx: Context, policy: DriverPolicy | undefin
 		}
 		const goal = currentGoal(state);
 		if (goal === void 0 || goal.phase !== "active" || goal.activation !== "armed") return;
+		// A round started while descendants progress would only wait for them.
+		if (behavior.joinsProgressingDescendants) {
+			const subagents = ctx.get("subagents") as unknown as ProgressingDescendants | undefined;
+			if (subagents !== undefined) {
+				await Promise.race([subagents.waitForChildren(agent), unloading.promise]);
+				if (!readyAfterCheckpoint(state)) return;
+			}
+		}
 		if (goal.roundsStarted >= goal.maxGoalRounds) {
 			ctx.goals.block(agent, goalRef(goal), {
 				code: "round-limit",
@@ -226,6 +245,7 @@ export function installNativeDriver(ctx: Context, policy: DriverPolicy | undefin
 	function stop(): Promise<void> {
 		if (stopPromise !== void 0) return stopPromise;
 		stopping = true;
+		unloading.resolve();
 		// Publish the shared promise before callbacks from unsubscribe/disarm/cancel.
 		let resolveStop: () => void = () => {};
 		let rejectStop: (reason: unknown) => void = () => {};
