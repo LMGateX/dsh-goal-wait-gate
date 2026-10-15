@@ -25,11 +25,13 @@ function fakeHost(extra: readonly Agent[] = []) {
   const parent = agent('parent-1')
   const agents = new Map<string, Agent>([[parent.id, parent], ...extra.map(item => [item.id, item] as const)])
   const jobs = new Map<string, FakeJob>()
+  /** Registry scans, so a test can prove an exact upkeep needed no re-seed. */
+  let listCalls = 0
   let jobListener: JobListener | undefined
   const ctx = {
     agents: {
       get: (id: string) => agents.get(id),
-      list: () => [...agents.values()],
+      list: () => { listCalls++; return [...agents.values()] },
       isOwnedBy: () => true,
     },
     jobs: {
@@ -49,6 +51,7 @@ function fakeHost(extra: readonly Agent[] = []) {
     parent,
     emit: (name: string, ...args: unknown[]) => handlers.get(name)?.(...args),
     remove: (id: string) => agents.delete(id),
+    listCalls: () => listCalls,
     /** The pre-index check, kept as the reference the indexed one must match. */
     referenceHold: (agentId: string, config: BackgroundConfig): boolean =>
       [...jobs.values()].some(job => job.owner === agentId
@@ -235,4 +238,60 @@ test('jobs owned by another session or unowned never hold', () => {
   host.register('job-2', { owner: undefined })
   assert.equal(policy.allows(host.parent), true, 'only the exact owner counts')
   stop()
+})
+
+test('a known disposal wakes only the chain above it and needs no re-seed', async () => {
+  const child = agent('child-1', { parentSession: 'parent-1', origin: 'subagent' })
+  const other = agent('parent-2')
+  const host = fakeHost([child, other])
+  const policy = createBackgroundPolicy(host.ctx, { waitForJobs: false, waitForSubagents: true })
+  const woken: string[] = []
+  const stop = policy.subscribe(candidate => { woken.push(candidate.id) })
+  try {
+    host.emit('agent/created', { agent: child })
+    assert.equal(policy.allows(host.parent), false, 'the descendant holds while it is live')
+    const seeded = host.listCalls()
+    woken.length = 0
+    host.remove(child.id)
+    host.emit('agent/disposed', { agent: child })
+    await new Promise(resolve => setImmediate(resolve))
+    assert.deepEqual(woken, ['parent-1'], 'only the chain the node belonged to re-evaluates')
+    assert.equal(policy.allows(host.parent), true, 'the removal is visible without a rebuild')
+    assert.equal(host.listCalls(), seeded, 'an exact removal never scans the registry')
+  } finally { stop() }
+})
+
+test('a disposal the index never saw stays conservative', async () => {
+  const child = agent('child-2', { parentSession: 'parent-1', origin: 'subagent' })
+  const host = fakeHost([child, agent('parent-2')])
+  const policy = createBackgroundPolicy(host.ctx, { waitForJobs: false, waitForSubagents: true })
+  const woken: string[] = []
+  const stop = policy.subscribe(candidate => { woken.push(candidate.id) })
+  try {
+    host.emit('agent/created', { agent: child })
+    assert.equal(policy.allows(host.parent), false)
+    const seeded = host.listCalls()
+    woken.length = 0
+    host.emit('agent/disposed', { agent: agent('stranger-1', { parentSession: 'parent-1', origin: 'subagent' }) })
+    await new Promise(resolve => setImmediate(resolve))
+    assert.deepEqual([...woken].sort(), ['child-2', 'parent-1', 'parent-2'], 'an unknown removal wakes every live agent')
+    assert.equal(policy.allows(host.parent), false)
+    assert.ok(host.listCalls() > seeded, 'and the next question re-seeds from the registry')
+  } finally { stop() }
+})
+
+test('overlapping activations over one chain release only when the last one ends', () => {
+  const host = fakeHost()
+  const policy = createBackgroundPolicy(host.ctx, { waitForJobs: false, waitForSubagents: true })
+  const stop = policy.subscribe(() => {})
+  try {
+    const start = (runId: string) => host.emit('subagent/start', { runId, id: 'parent-1', provider: 'spawn', local: true }, host.parent)
+    start('run-a')
+    start('run-b')
+    assert.equal(policy.allows(host.parent), false, 'two epochs hold')
+    host.emit('subagent/end', { runId: 'run-a' })
+    assert.equal(policy.allows(host.parent), false, 'the chain is still named by the other epoch')
+    host.emit('subagent/end', { runId: 'run-b' })
+    assert.equal(policy.allows(host.parent), true, 'the last epoch releases the chain')
+  } finally { stop() }
 })

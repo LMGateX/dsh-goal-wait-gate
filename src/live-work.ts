@@ -32,10 +32,26 @@ function indexFor(ctx: Context): DescendantIndex {
   const index: DescendantIndex = { children: new Map(), seeded: false }
   indexes.set(ctx, index)
   ctx.on('agent/created', ({ agent }): undefined => { indexChild(index, agent) })
-  // A disposal is the one change a set of live children cannot absorb: the
-  // disposed agent may be any node of any chain, so the index is rebuilt.
-  ctx.on('agent/disposed', () => { index.seeded = false })
+  // A disposal this index knows is removed exactly, together with the subtree
+  // only reachable through it; anything else re-seeds, because a node the index
+  // never saw can sit anywhere in any chain.
+  ctx.on('agent/disposed', ({ agent }): undefined => { if (!detachChild(index, agent)) index.seeded = false })
   return index
+}
+
+/**
+ * Drop one indexed descendant and the entries keyed by its session id.
+ *
+ * Once the node's own link to its parent is gone the walk can never reach that
+ * bucket again, so the subtree goes with it; leaving it would retain live
+ * grandchildren and their sets for the life of the realm. Answers whether the
+ * index could have held the node at all.
+ */
+function detachChild(index: DescendantIndex, agent: Agent): boolean {
+  const { parentSession, origin } = agent.session.header
+  if (parentSession === undefined || origin !== 'subagent') return true
+  const known = index.children.get(parentSession)?.delete(agent) === true
+  return index.children.delete(String(agent.session.id)) || known
 }
 
 /** Add one live subagent descendant under the session its header names. */

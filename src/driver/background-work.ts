@@ -16,6 +16,14 @@ export function createBackgroundPolicy(ctx: Context, source: BackgroundConfigSou
   const handoffs = new Map<Agent, number>()
   const epochs = new Map<SubagentRunId, readonly Agent[]>()
   /**
+   * How many live activation epochs name each ancestor.
+   *
+   * The decision asks whether one agent is inside any epoch, which used to
+   * allocate the chain list and scan it on every checkpoint; the count answers
+   * the same question in one lookup and is maintained with the epochs.
+   */
+  const epochRefs = new Map<Agent, number>()
+  /**
    * Live jobs per owner, kept from the lifecycle events below.
    *
    * `list(owner)` answers with every retained record, and the decision scanned
@@ -105,12 +113,35 @@ export function createBackgroundPolicy(ctx: Context, source: BackgroundConfigSou
    */
   const children = new Map<string, Set<Agent>>()
   let indexed = false
+  /**
+   * Ancestor chains captured while indexing, so a disposal wakes exactly the
+   * agents whose answer can change.
+   *
+   * Removing a node only changes `hasDescendant` for the agents above it, and
+   * the host disposes descendants far more often than it touches anything else;
+   * waking the whole realm there would re-evaluate every mounted driver for a
+   * removal no other chain can observe. A node this index never saw reports no
+   * chain, and the handler then stays conservative and wakes the realm.
+   */
+  const ancestry = new WeakMap<Agent, readonly Agent[]>()
   const indexAgent = (agent: Agent): void => {
+    ancestry.set(agent, ancestors(agent))
     const parentId = agent.session.header.parentSession
     if (parentId === undefined) return
     const bucket = children.get(parentId)
     if (bucket === undefined) children.set(parentId, new Set([agent]))
     else bucket.add(agent)
+  }
+  /**
+   * Retire one indexed descendant, with the subtree that is only reachable
+   * through it: once the node's own link to its parent is gone, entries keyed
+   * by its session id can never be walked from any root again. Answers whether
+   * this index knew the node; an unknown removal re-seeds instead of guessing.
+   */
+  const detachAgent = (agent: Agent): boolean => {
+    const parentId = agent.session.header.parentSession
+    const known = parentId !== undefined && children.get(parentId)?.delete(agent) === true
+    return children.delete(String(agent.session.id)) || known
   }
   const hasDescendant = (agent: Agent): boolean => {
     if (!indexed) {
@@ -154,7 +185,7 @@ export function createBackgroundPolicy(ctx: Context, source: BackgroundConfigSou
       if (unavailable) throw new Error('Published background work cannot be observed safely')
       if (closed || handoffs.has(agent) || unplaceable.size > 0) return false
       if (liveJobCount(agent) > 0) return false
-      if (settings().waitForSubagents !== false && (hasDescendant(agent) || [...epochs.values()].some(chain => chain.includes(agent)))) return false
+      if (settings().waitForSubagents !== false && (hasDescendant(agent) || (epochRefs.get(agent) ?? 0) > 0)) return false
       return true
     },
     subscribe(wake) {
@@ -222,6 +253,7 @@ export function createBackgroundPolicy(ctx: Context, source: BackgroundConfigSou
             unavailable = true; notify(ctx.agents.list()); return
           }
           epochs.set(info.runId, chain)
+          for (const ancestor of chain) epochRefs.set(ancestor, (epochRefs.get(ancestor) ?? 0) + 1)
           notify(chain)
         }
         stops.push(ctx.on('subagent/start', onStart))
@@ -230,12 +262,23 @@ export function createBackgroundPolicy(ctx: Context, source: BackgroundConfigSou
           const chain = epochs.get(info.runId)
           if (chain === undefined || closed) return
           epochs.delete(info.runId)
+          for (const ancestor of chain) {
+            const remaining = (epochRefs.get(ancestor) ?? 1) - 1
+            if (remaining === 0) epochRefs.delete(ancestor)
+            else epochRefs.set(ancestor, remaining)
+          }
           notify(chain) // rc.2 continuable end follows disposal and the native notice attempt.
         }))
         stops.push(ctx.on('agent/created', ({ agent }): undefined => { indexAgent(agent) }))
-        stops.push(ctx.on('agent/disposed', () => { indexed = false; notify(ctx.agents.list()) }))
+        stops.push(ctx.on('agent/disposed', ({ agent }): undefined => {
+          // A node this index knows is removed exactly; anything else re-seeds
+          // from the live registry instead of guessing what the index missed.
+          if (!detachAgent(agent)) indexed = false
+          const chain = ancestry.get(agent)
+          if (chain === undefined || chain.length > 0) notify(chain ?? ctx.agents.list())
+        }))
       }
-      return () => { closed = true; for (const stop of stops.toReversed()) stop(); epochs.clear(); handoffs.clear(); liveJobs.clear() }
+      return () => { closed = true; for (const stop of stops.toReversed()) stop(); epochs.clear(); epochRefs.clear(); handoffs.clear(); liveJobs.clear() }
     },
   }
 }
