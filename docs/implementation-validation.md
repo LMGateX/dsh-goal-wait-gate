@@ -108,4 +108,22 @@ The bundle registers `plugins.row.config` under key `dsh-goal-wait-gate#goal-wai
 Verification: `node scripts/check-client.mjs` (exit 0) stubs `window.__ModuleLoader__`, a minimal React surface and a fake client context, runs the factory, and asserts the slot target/key/injection, a control for each of the four fields with the four choices and their labels, that a staged change plus Save submits exactly `[{set strategy native}, {set waitForJobs false}, {set maxHoldMs 45000}]` fenced by the current revision, that an invalid duration is refused locally without a write, and that the file carries no ESM syntax; `package.json` ships `client/`, confirmed by `npm pack`. The six suites stay 103/103 and `check:settings`/`check:bundle` exit 0.
 
 Honest gap: the check proves the registered element tree and the mutation it issues, not the browser's own pixel rendering; the row page still needs one live restart to be seen. No live profile was touched by this change and nothing was pushed, tagged or installed.
+## 性能核对（0.4.17，alpha.3/alpha.4 支持分支）
+
+事件驱动热路径按「先测量、再决定」核对，全部在同一台机器上用 20 万次迭代的微基准与真实 0.2.1-alpha.4 安装树测量：
+
+| 路径 | 实测 | 处置 |
+|---|---|---|
+| `gate.evaluate`（无活工作 / 有存活后代） | 119 ns / 272 ns | 不动：决策层已是百纳秒级 |
+| 驱动策略 `allows`（有 job＋后代 / 无工作） | 35 ns / 27 ns | 不动 |
+| `resolveRowConfig`（4 个 live accessor） | 161 ns | 不动：它承担「保存即生效」的语义，缓存会改变契约 |
+| `Promise.resolve().then(noop)`（对照） | 408 ns | 据此修掉 checkpoint 的稳态空转（见下） |
+| 一次 host 身份识别（冷启动 / 预热） | 15.5–16.4 ms / 6.5 ms | 不动：见下面被否决的探测快路径 |
+
+已实施：`agent/disposed` 只唤醒判定可能改变的祖先链（原为全 realm 唤醒加索引重建）、索引精确增删并对未知节点保守重 seed、activation epoch 成员判断改为引用计数、checkpoint 仅在 live 策略与已挂载策略不同时才入队（稳态每次 checkpoint 省一个 promise 与微任务，而 `replacement` 策略下 checkpoint 的全部工作就是这个空转）、祖先链记录 id 而非 Agent、job 生命周期集合提取出事件路径。两份后代索引的维护机制（插入、精确移除带子树、重 seed）抽出为 `src/descendants.ts`；查询语义仍留在各自调用方（闸门走任意深度，移植驱动按存活的直属子代理回答），因为两者的判据本就是有意不同的。
+
+否决项：曾实现「先读 driver 版本、未 pin 就跳过该 scope」的挂载探测快路径，实测冷启动 15.5/15.6/16.4 ms（原路径）对 15.8/15.3/15.8 ms（新路径）、预热 6.5 ms 对 7.2 ms，在噪声内且预热略慢，故回滚、未提交。原因：不匹配的 scope 本来就在第一个包解析时退出，昂贵的整表读取只发生在可解析的 scope 上，而那正是候选。
+
+验证：rc.2 开发宿主 138/138；真实 0.2.1-alpha.4 宿主 138 项（136 通过、2 跳过、0 失败）；`check-startup-host` 对 alpha.4 通过；构建与 `npm pack` 通过；真实 alpha.4 CLI 上 `replacement` 与 `activation` 两种策略的 e2e 均通过。本机 live profile 未被写入，未安装、未发版。
+
 
