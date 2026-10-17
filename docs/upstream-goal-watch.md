@@ -162,6 +162,28 @@ Related evidence and ADR: ADR-0001、ADR-0002、docs/startup-driver.md、src/dri
 
 结论：0.2.1-alpha.4 对 goal continuation 面零改动，alpha.3 的结论原样成立——原生 driver 已覆盖"进行中的后代"，但仍完全不读后台 Job，闸门的必要性未消除；`waitForSubagents` 与该 pin 上游语义的重叠已实测为窄窗口，默认值保持不变，决策记入 ADR-0001 补充。真实 alpha.4 宿主上的 e2e 证明交付路径（安装/装载/host 身份/两种策略）成立，同一份 native suite 也在真实 alpha.4 realm 上全绿（含以真实 waitForChildren、alpha.3 与 alpha.2 两种身份各跑一次的 descendant join 场景）；但这些都不能替代"工作范围是否一致"的判断。
 
+## 复核记录：DSH 0.2.1-rc.1
+
+按上文模板填写；只使用发布包内可核对的证据，不推断 master。
+
+```text
+DSH version / upstream commit or package evidence: 0.2.1-rc.1 npm 发布包（dist-tag next，发布于 2026-10-17T05:22:10Z，GitHub release dsh-v0.2.1-rc.1）；driver 身份以 dsh-goal-round-driver 0.2.1-rc.1 的 lib/index.js 为准（SHA-256 255483fb…953ec7f1ff92，与 alpha.3/alpha.4 逐字节相同），并与 alpha.4 逐包对比 goal、goal-round-driver、jobs、agent、subagent、session、llm、scope、system-prompt 以及 dsh-app-boot
+Plugin version / commit: 0.4.18 分支 feat/dsh-0.2.1-alpha-support（本次 pin 提交）
+Changes in scheduling seam: 无。上述发布包的 lib/ 除 package.json 里的自身版本号与兄弟包精确版本外逐字节相同（diff -r 排除 package.json 无输出）；driver 仍只等待“进行中的后代”，仍完全不读后台 Job。
+Changes in phase / activation / revision / ownership: 无（goal 执行 bundle 未变化）。
+Changes in edit and completion authority: 无（tool-goal 未变化）。
+Changes in model-visible goal context: 无。
+Changes in jobs / subagent lifecycle: 无执行代码变化。发行版层面两处：Cordis 从 4.0.5-alpha.2 毕业为稳定 4.0.5（该包 lib 与 4.0.4、4.0.5-alpha.2 逐字节相同，只有版本号不同），dsh 元包对 Cordis 的依赖改为 ~4.0.5，因此 pin 的 Cordis 字段必须写 4.0.5；dsh-invariants 与 dsh-subagent-in-process-driver 继续不随发行版提供（alpha.1 起的既有状态）。
+New in this release（与 goal 无关但影响插件交付）: 插件兼容性判定仍按 engines.dsh 优先（dsh-app-boot 与 alpha.4 逐字节相同）；发布说明里的“等待运行中的子任务再开始下一轮目标”与“后台工作流不再被误标为已中断”都在 0.2.1 系列、alpha.4 之前生效，rc.1 没有新增 continuation 面变更。
+Automated checks actually run and results: typecheck 通过；rc.2 开发宿主 139/139 通过（新增 rc.1 身份选择与运行期身份模拟各一项）；真实 0.2.1-rc.1 宿主（隔离副本 + npm 装出的 303 个 @deepseek-ai 包）同一套 139 项中 137 通过、2 跳过、0 失败；check-startup-host 对真实 0.2.1-rc.1 安装报 pinned 0.2.1-rc.1、303 个宿主包链接下 src/ 类型检查通过；check-host-compat 全矩阵（8 个宿主，按各自真实 Cordis 版本）通过；check:bundle/check:settings/check:client 通过；npm pack + prepack 构建通过。
+Isolated integration scenarios actually run and results: 在 /tmp 的一次性 DSH home 内用真实 @deepseek-ai/dsh@0.2.1-rc.1 CLI 跑 scripts/e2e-isolated.mjs，replacement 与 activation 两种策略各 12 项检查全绿；状态记录写明 host.distribution=0.2.1-rc.1、cordis=4.0.5、driverSha256=255483fb…、无 fallback。未运行真实模型会话。
+Skipped checks / limitations / unresolved risks: 未验证 GUI，也未在真实模型会话中验证目标可见性；与 alpha.4 相同，两项 one-shot 后台工具场景在 rc.1 上因宿主不再发布该模式而跳过（fixture 按宿主能力跳过）。未写入本机 live profile，未安装、未发版。
+Decision: 新增 0.2.1-rc.1 pin——与 alpha.4 同 fingerprint、同 behavior，仅 Cordis 身份改为稳定 4.0.5；必要性结论与 alpha.3/alpha.4 相同，保留闸门。
+Related evidence and ADR: ADR-0001、ADR-0002、docs/startup-driver.md、src/driver/provenance.json
+```
+
+结论：0.2.1-rc.1 对 goal continuation 面零改动，alpha.3/alpha.4 的结论原样成立——原生 driver 已覆盖“进行中的后代”但仍完全不读后台 Job，闸门的必要性未消除。rc.1 的适配差异只有两处身份数据（distribution 版本、Cordis 4.0.5）与矩阵里的一行；真实 rc.1 宿主上的 e2e 与 native suite 证明交付路径与行为在发行候选版上仍然成立。
+
 ## 观察记录：插件页只渲染 bundle，不属于 bundle 的 Loader 行没有入口
 
 2026-10-05 于 DSH 0.2.1-alpha.1 复核：`dsh-client-ui-plugin-manager` 的 Plugins 面板以 `packages = listBundles().map(bundle => packageView(bundle, plugins))` 组卡，行只挂在自己 bundle 的卡片内；`dsh-plugin-manager` 的 `listBundles()` 对**非 bundle 依赖**只在它同时被选入 `dsh.profile.bundles` 时才列出（且以 `not-bundle` 错误呈现），而 `bundleManifest()` 只认声明了 `package.json.dsh.bundle.patch` 的包。因此"普通依赖 + 手写 `insert` 行"这种交付方式虽然能正常挂载，却在插件页完全不可见，也没有启停入口；设置里的只读「插件列表」虽然直接读 Loader 因而能看到该行，但那是诊断视图而非管理入口。

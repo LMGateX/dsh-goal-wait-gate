@@ -126,4 +126,22 @@ Honest gap: the check proves the registered element tree and the mutation it iss
 
 验证：rc.2 开发宿主 138/138；真实 0.2.1-alpha.4 宿主 138 项（136 通过、2 跳过、0 失败）；`check-startup-host` 对 alpha.4 通过；构建与 `npm pack` 通过；真实 alpha.4 CLI 上 `replacement` 与 `activation` 两种策略的 e2e 均通过。本机 live profile 未被写入，未安装、未发版。
 
+## 0.2.1-rc.1 支持核对（0.4.18 分支）
+
+rc.1 只移动发行版身份，不移动 goal continuation 的实现：dsh-goal-round-driver 0.2.1-rc.1 的 lib/index.js 与 alpha.3/alpha.4 逐字节相同（SHA-256 255483fb…），goal、jobs、agent、subagent、session、llm、scope、system-prompt 与 dsh-app-boot 也是（`diff -r` 排除 package.json 无输出）。两处身份变化：distribution 版本改为 0.2.1-rc.1；Cordis 毕业为稳定 4.0.5（包内容与 4.0.4、4.0.5-alpha.2 相同，dsh 元包依赖 `~4.0.5`）。
+
+适配因此是数据与矩阵：`src/driver/host-version.ts` 新增一行 pin（Cordis 4.0.5、同 fingerprint、同 behavior），`test/host-profile.test.ts` 锁住该身份与行为并新增一项运行期身份模拟检测，`scripts/check-host-compat.mjs` 把 rc.1 加入默认矩阵，并把 Cordis 版本改为按宿主解析——此前矩阵里所有宿主都装 4.0.4，而 rc.1 的包声明 peer `~4.0.5`，用 4.0.4 就测的不是它实际运行的声明树。
+
+实测结果（2026-10-17，本机）：
+
+- rc.2 开发宿主：139/139。
+- 真实 rc.1 宿主（/tmp 一次性隔离副本，链接 npm 装出的全部 303 个 @deepseek-ai 包；rc.1 已不发布的 dsh-subagent-in-process-driver 必须缺席，否则身份表会读到混合版本）：139 项中 137 通过、2 跳过、0 失败。两项跳过与 alpha.4 相同——宿主不再发布 one-shot 后台委派模式，fixture 按宿主能力跳过。
+- `check-startup-host`：真实 rc.1 安装报 pinned 0.2.1-rc.1，303 个宿主包链接下 src/ 类型检查通过。
+- `check-host-compat`：8 个宿主全过（按宿主 Cordis 版本：alpha.1/alpha.2 → 4.0.5-alpha.1，alpha.3/alpha.4 → 4.0.5-alpha.2，rc.1 → 4.0.5）。
+- `check:bundle` / `check:settings` / `check:client`：通过。
+- 真实 rc.1 CLI 的 e2e（/tmp 一次性 DSH home，npm pack 出的 0.4.18 tarball）：replacement 与 activation 各 12 项全绿；状态记录 `host.distribution=0.2.1-rc.1`、`cordis=4.0.5`、`driverSha256=255483fb…`、无 fallback。
+
+未做：本机 live profile 安装、发版、GUI 与真实模型会话验证。
+
+
 

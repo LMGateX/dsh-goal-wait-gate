@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url'
 import semver from 'semver'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const DEFAULT_HOSTS = ['0.1.7-alpha.2', '0.1.7-rc.2', '0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-alpha.2', '0.2.1-alpha.3', '0.2.1-alpha.4']
+const DEFAULT_HOSTS = ['0.1.7-alpha.2', '0.1.7-rc.2', '0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-alpha.2', '0.2.1-alpha.3', '0.2.1-alpha.4', '0.2.1-rc.1']
 const HOSTS = process.argv.slice(2).length > 0 ? process.argv.slice(2) : DEFAULT_HOSTS
 const DSH_PACKAGES = [
   '@deepseek-ai/dsh-agent',
@@ -37,7 +37,17 @@ const DSH_PACKAGES = [
   '@deepseek-ai/dsh-settings',
   '@deepseek-ai/dsh-subagent',
 ]
+// Cordis version each published host actually resolves; the copy has to see the
+// declarations the host runs. 0.2.1-rc.1 graduated to the stable 4.0.5 release.
 const CORDIS_VERSION = '4.0.4'
+const CORDIS_BY_HOST = {
+  '0.2.1-alpha.1': '4.0.5-alpha.1',
+  '0.2.1-alpha.2': '4.0.5-alpha.1',
+  '0.2.1-alpha.3': '4.0.5-alpha.2',
+  '0.2.1-alpha.4': '4.0.5-alpha.2',
+  '0.2.1-rc.1': '4.0.5',
+}
+const cordisFor = host => CORDIS_BY_HOST[host] ?? CORDIS_VERSION
 const WORK = join(tmpdir(), 'dsh-goal-wait-gate-host-compat')
 const TSC = join(ROOT, 'node_modules', '.bin', 'tsc')
 
@@ -65,7 +75,7 @@ for (const host of HOSTS) {
     private: true,
     type: 'module',
     dependencies: Object.fromEntries([
-      ['@deepseek-ai/cordis', CORDIS_VERSION],
+      ['@deepseek-ai/cordis', cordisFor(host)],
       ...DSH_PACKAGES.map((name) => [name, host]),
       ['@deepseek-ai/schemastery', pkg.dependencies['@deepseek-ai/schemastery'] ?? '~3.18.4'],
       ['@types/node', '^24.0.0'],
@@ -112,7 +122,7 @@ for (const host of HOSTS) {
     failures.push('engines.dsh: range "' + dshEngine + '" rejects ' + host)
   }
   for (const [name, range] of Object.entries(pkg.peerDependencies)) {
-    const version = name === '@deepseek-ai/cordis' ? CORDIS_VERSION : host
+    const version = name === '@deepseek-ai/cordis' ? cordisFor(host) : host
     // Mirror dsh-app-boot's evaluatePluginCompatibility: the loader refuses a
     // plugin unless every @deepseek-ai/dsh* peer accepts the runtime version,
     // and it compares with prereleases included.

@@ -19,6 +19,7 @@ const alpha = profileFor('0.2.1-alpha.1')
 const alpha2 = profileFor('0.2.1-alpha.2')
 const alpha3 = profileFor('0.2.1-alpha.3')
 const alpha4 = profileFor('0.2.1-alpha.4')
+const rc1 = profileFor('0.2.1-rc.1')
 
 /** Pinned profile of the host this suite really runs on; the same suite must pass on each. */
 function detectInstalledProfile(): HostProfile {
@@ -83,6 +84,7 @@ test('artifact identity selects the exact ported behavior of that pinned host', 
   assert.deepEqual(matchHostProfile(facts(alpha2)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: false })
   assert.deepEqual(matchHostProfile(facts(alpha3)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true })
   assert.deepEqual(matchHostProfile(facts(alpha4)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true })
+  assert.deepEqual(matchHostProfile(facts(rc1)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true })
   assert.equal(matchHostProfile(facts(alpha, { '@deepseek-ai/dsh-session': alpha.distribution })).distribution, '0.2.1-alpha.1')
 })
 
@@ -97,6 +99,13 @@ test('a byte-identical republish is a new identity with the same ported behavior
     assert.deepEqual(republish.driver, original.driver)
     assert.deepEqual(matchHostProfile(facts(republish)).driver, original.driver)
   }
+  // 0.2.1-rc.1 republishes the alpha.4 driver once more, this time with Cordis
+  // graduated to the stable 4.0.5 release: same fingerprint, same behavior, but
+  // its own Cordis identity, which is why it is not in the pair loop above.
+  assert.notEqual(rc1.distribution, alpha4.distribution)
+  assert.equal(rc1.driverSha256, alpha4.driverSha256)
+  assert.notEqual(rc1.cordis, alpha4.cordis)
+  assert.deepEqual(matchHostProfile(facts(rc1)).driver, alpha4.driver)
   // The fingerprint identifies the artifact, the version identifies the
   // distribution: a republish under an unpinned version is still refused.
   assert.throws(
@@ -155,6 +164,24 @@ test('a pinned 0.2.1-alpha.2 identity is detected and retires the unclaimed queu
     // ported behavior is the one already pinned for 0.2.1-alpha.1.
     assert.equal(alpha2.driverSha256, alpha.driverSha256)
     assert.equal(alpha2.driver.removeCancelledQueuedMessage, alpha.driver.removeCancelledQueuedMessage)
+    const observed = await cancelQueuedRound(h)
+    assert.equal(observed.parked, false)
+    assert.equal(h.goal?.phase, 'paused')
+    assert.equal(h.goal?.roundsStarted, 0)
+    assert.equal(h.mainCalls, 0)
+  } finally { t.mock.restoreAll(); syncBuiltinESMExports(); await h.dispose() }
+})
+
+test('a pinned 0.2.1-rc.1 identity is detected and retires the unclaimed queued round', async t => {
+  simulateHost(t, rc1)
+  const h = await new NativeFixture().initialize()
+  try {
+    assert.equal(getStartupState(h.ctx)?.host?.distribution, '0.2.1-rc.1')
+    assert.equal(getStartupState(h.ctx)?.host?.driverSha256, rc1.driverSha256)
+    // The release candidate republishes the alpha.3/alpha.4 driver under the
+    // stable Cordis release, so the queued-round behavior carries over.
+    assert.equal(rc1.driverSha256, alpha4.driverSha256)
+    assert.equal(rc1.driver.removeCancelledQueuedMessage, alpha4.driver.removeCancelledQueuedMessage)
     const observed = await cancelQueuedRound(h)
     assert.equal(observed.parked, false)
     assert.equal(h.goal?.phase, 'paused')

@@ -14,7 +14,7 @@ A separate TypeScript `dsh-goal-wait-gate/startup` export implements mutually ex
 
 The official driver injects a `<goal_round>` prompt whenever an agent is idle and its goal is active and armed. Idle only means "no turn is currently running", so an agent that deliberately ended its turn to wait for a background job or a background subagent is indistinguishable from one with nothing left to do. Every waiting gap becomes another goal round: the round budget is consumed, the whole session is re-prefilled, and models start reading the round count as elapsed time — sometimes interrupting healthy long-running subagents.
 
-This is a known upstream behavior that is still unfixed **for background jobs** through DSH `0.2.1-alpha.4`: from `0.2.1-alpha.3` the official driver does wait for the agent's progressing subagent descendants before reserving a round, but it reads no job state at all, so an agent that ended its turn to wait for a background job is still indistinguishable from one with nothing left to do (discussions [#4664](https://github.com/deepseek-ai/deepseek-harness/discussions/4664), [#4715](https://github.com/deepseek-ai/deepseek-harness/discussions/4715), [#1421](https://github.com/deepseek-ai/deepseek-harness/discussions/1421)).
+This is a known upstream behavior that is still unfixed **for background jobs** through DSH `0.2.1-rc.1`: from `0.2.1-alpha.3` the official driver does wait for the agent's progressing subagent descendants before reserving a round, but it reads no job state at all, so an agent that ended its turn to wait for a background job is still indistinguishable from one with nothing left to do (discussions [#4664](https://github.com/deepseek-ai/deepseek-harness/discussions/4664), [#4715](https://github.com/deepseek-ai/deepseek-harness/discussions/4715), [#1421](https://github.com/deepseek-ai/deepseek-harness/discussions/1421)).
 
 ## What the gate does
 
@@ -52,10 +52,10 @@ A clean future migration requires a public scheduling defer **and re-evaluation*
 
 ## Requirements
 
-- DSH `0.1.7-alpha.2` through `0.2.1-alpha.4` (declared `engines.dsh` and peer range `>=0.1.7-alpha.2 <0.3`). DSH 0.2 enforces these **at load time with prereleases included**: a range that does not accept the running version makes the loader refuse the plugin (the explicit override is `dsh plugin allow-version`). From `0.2.1-alpha.4` the host reads an own `engines.dsh` first and ignores the peer ranges; older hosts use the peers only. `pnpm check:hosts` verifies both against every host in the matrix.
+- DSH `0.1.7-alpha.2` through `0.2.1-rc.1` (declared `engines.dsh` and peer range `>=0.1.7-alpha.2 <0.3`). DSH 0.2 enforces these **at load time with prereleases included**: a range that does not accept the running version makes the loader refuse the plugin (the explicit override is `dsh plugin allow-version`). From `0.2.1-alpha.4` the host reads an own `engines.dsh` first and ignores the peer ranges; older hosts use the peers only. `pnpm check:hosts` verifies both against every host in the matrix.
 - Node >= 22.
 - Services: `agents` and `goals` are required; `sessions` must exist for a driver to mount (the row reports and mounts nothing without it); `jobs` is optional (without it, only subagent work gates).
-- The opt-in `dsh-goal-wait-gate/startup` owner is stricter than that peer range: it runs only on an exactly pinned published host — currently `0.2.0-rc.2` through `0.2.1-alpha.4`, listed in the [support contract](<docs/startup-driver.md>) — matched by package versions **and** the published native driver SHA-256 together. Any other distribution, including a newer alpha, is refused before a driver is mounted. Support is per artifact identity, not a version range; see the [support contract](<docs/startup-driver.md>).
+- The opt-in `dsh-goal-wait-gate/startup` owner is stricter than that peer range: it runs only on an exactly pinned published host — currently `0.2.0-rc.2` through `0.2.1-rc.1`, listed in the [support contract](<docs/startup-driver.md>) — matched by package versions **and** the published native driver SHA-256 together. Any other distribution, including a newer alpha, is refused before a driver is mounted. Support is per artifact identity, not a version range; see the [support contract](<docs/startup-driver.md>).
 
 ## Install
 

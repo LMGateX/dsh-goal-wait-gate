@@ -67,6 +67,16 @@ export const supportedHosts: readonly HostProfile[] = [
     driverSha256: '255483fbf86bed0dac5f641d89684de1933695e2c034475b2fa3953ec7f1ff92',
     driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true },
   },
+  // 0.2.1-rc.1 moves the distribution to the release candidate while publishing
+  // that very same driver bundle; only Cordis graduates, from 4.0.5-alpha.2 to
+  // the stable 4.0.5 release. The identity gains a row and the behavior does not
+  // change from alpha.3/alpha.4.
+  {
+    distribution: '0.2.1-rc.1',
+    cordis: '4.0.5',
+    driverSha256: '255483fbf86bed0dac5f641d89684de1933695e2c034475b2fa3953ec7f1ff92',
+    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true },
+  },
 ]
 
 /** Packages whose exact version must equal the detected distribution version. */
