@@ -155,5 +155,8 @@ rc.2 的改动只在 Web 搜索与模型标签：dsh-goal-round-driver 0.2.1-rc.
 - `check-host-compat`：0.2.1-rc.2 通过（按宿主装 Cordis 4.0.5）。
 - 客户端槽位：rc.2 的 dsh-client-ui-plugin-manager 与 dsh-cordis-client-runner 仍带 `plugins.row.config`。
 
-未做：完整 CLI e2e 被上游发布缺口挡住——发布当时 `@deepseek-ai/dsh@0.2.1-rc.2` 在 pnpm 解析阶段就失败，因为 `@deepseek-ai/dsh-tool-pwsh-persistent@0.2.1-rc.2` 与 `@deepseek-ai/dsh-client-ui-settings-account@0.2.1-rc.2` 尚未发布（其余 81 个 scoped 直接依赖齐全）。这是上游发布问题，与本插件无关；补齐后重跑 `node scripts/e2e-isolated.mjs --strategy replacement|activation` 即可。GUI 与真实模型会话未验证；本机 live profile 未写入、未安装、未发版。
+- 真实 rc.2 CLI 的 e2e（/tmp 一次性 DSH home，npm pack 出的 0.4.19 tarball）：replacement 与 activation 各 12 项全绿；状态记录 `host.distribution=0.2.1-rc.2`、`cordis=4.0.5`、`driverSha256=255483fb…`、无 fallback。核对期间 npm 上的 rc.2 曾缺 `dsh-tool-pwsh-persistent` 与 `dsh-client-ui-settings-account` 两个包（pnpm 解析失败，而 dist-tag next 已指向 rc.2），约半小时后补齐，复测通过。
+- 同一 tarball 在本机 0.2.1-alpha.4 CLI 上跑同样两种策略，也各 12 项全绿。
+
+未做：GUI 与真实模型会话验证；核对阶段未写入本机 live profile。
 
