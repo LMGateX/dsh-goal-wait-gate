@@ -15,6 +15,8 @@ import { hasLiveJobs, hasLiveSubagents } from './live-work.ts'
 /** Gate one live agent's goal continuation. */
 export class GoalWaitGate {
   readonly #ctx: Context
+  /** The goal service read once per mount: the property access alone costs a service lookup. */
+  readonly #goals: Context['goals']
   /**
    * The policy source, read at each decision. The row hands over a provider so
    * a saved volatile change applies from the next evaluation; the boot API and
@@ -30,6 +32,7 @@ export class GoalWaitGate {
 
   constructor(ctx: Context, policy: ResolvedGateConfig | (() => ResolvedGateConfig)) {
     this.#ctx = ctx
+    this.#goals = ctx.goals
     this.#policy = typeof policy === 'function' ? policy : () => policy
   }
 
@@ -42,7 +45,7 @@ export class GoalWaitGate {
   evaluate(agent: Agent): void {
     if (this.#stopping) return
     try {
-      const goal = this.#ctx.goals.get(agent)
+      const goal = this.#goals.get(agent)
       if (this.#hasLiveWork(agent)) this.#hold(agent, goal)
       else this.#release(agent, goal)
     } catch (error) {
@@ -91,9 +94,9 @@ export class GoalWaitGate {
     for (const agent of [...this.#expiryTimers.keys()]) this.#clearExpiry(agent)
     for (const [agent, heldGoal] of [...this.#heldGoals]) {
       try {
-        const goal = this.#ctx.goals.get(agent)
+        const goal = this.#goals.get(agent)
         if (goal !== undefined && goal.id === heldGoal && goal.phase === 'active' && goal.activation === 'disarmed') {
-          this.#ctx.goals.resume(agent, goalRef(goal))
+          this.#goals.resume(agent, goalRef(goal))
           this.#logRelease(agent, goal, 'plugin unloading')
         }
       } catch (error) {
@@ -127,7 +130,7 @@ export class GoalWaitGate {
   #hold(agent: Agent, goal: GoalView | undefined): void {
     if (this.#reconcile(agent, goal)) return
     if (goal === undefined || goal.phase !== 'active' || goal.activation !== 'armed') return
-    this.#ctx.goals.disarm(agent)
+    this.#goals.disarm(agent)
     this.#heldGoals.set(agent, goal.id)
     this.#ctx.logger.info(
       `goal-wait-gate: held agent "${agent.id}" goal ${goal.id} rev ${goal.revision}: live background work pending`,
@@ -187,7 +190,7 @@ export class GoalWaitGate {
     if (heldGoal === undefined) return
     this.#heldGoals.delete(agent)
     if (goal === undefined || goal.id !== heldGoal || goal.phase !== 'active' || goal.activation !== 'disarmed') return
-    this.#ctx.goals.resume(agent, goalRef(goal))
+    this.#goals.resume(agent, goalRef(goal))
     this.#logRelease(agent, goal, 'no live background work')
   }
 
@@ -233,9 +236,9 @@ export class GoalWaitGate {
     this.#heldGoals.delete(agent)
     this.#yieldedGoals.set(agent, heldGoal)
     try {
-      const goal = this.#ctx.goals.get(agent)
+      const goal = this.#goals.get(agent)
       if (goal !== undefined && goal.id === heldGoal && goal.phase === 'active' && goal.activation === 'disarmed') {
-        this.#ctx.goals.resume(agent, goalRef(goal))
+        this.#goals.resume(agent, goalRef(goal))
         this.#ctx.logger.warn(
           `goal-wait-gate: released agent "${agent.id}" goal ${goal.id} rev ${goal.revision}: hold expired after ${this.#policy().maxHoldMs}ms`,
         )

@@ -160,3 +160,31 @@ rc.2 的改动只在 Web 搜索与模型标签：dsh-goal-round-driver 0.2.1-rc.
 
 未做：GUI 与真实模型会话验证；核对阶段未写入本机 live profile。
 
+## 性能/事件驱动复核（0.4.20）
+
+针对“每次 checkpoint 的工作量随会话历史增长”做了一轮审计：先按事件订阅与索引结构清点，再在真实宿主包组成的 realm 里逐项实测，最后用原型验证。所有改动保持原有语义（作业存活判据、后代判据、持有方向均未变）。
+
+### 1. 闸门的作业检查不再扫全部保留记录
+
+`hasLiveJobs` 走 `ctx.jobs.list(owner)`：宿主实现遍历整个 realm 的作业，并为该 owner 的每条物化 view（实测 ~5 µs/条），且 settled 记录保留到 owner 释放。实测 `gate.evaluate`：0 条 151 µs、50 条 365 µs、200 条 1.03 ms、400 条（含外部 owner）2.03 ms。
+
+改为按 owner 的事件计数（`registered` +1、`settled` -1；`stopping`/`removed` 不改变存活），首次查询从 registry 播种，owner 释放时删除计数：0/50/200 条分别为 118/116/108 µs，与历史无关。
+
+### 2. 每次评估少做服务查找与 registry 查询
+
+- 闸门在构造时缓存 goals 服务：属性访问本身就是一次服务解析（~7–9 µs/次）。
+- 后代索引额外维护 `live` 集合（插入时加、disposal 时删、re-seed 时重建），walk 用它判断存活，不再对每个子节点调 `ctx.agents.get`（~13 µs/次）；无子代时零分配提前返回。真实 realm 无后代场景 746 → 100 ns/次。
+
+### 3. 空闲作业计数不再按 owner 无界累积
+
+`createBackgroundPolicy` 的 `liveJobs` 每 owner 计数归零后不删除（只在 driver 卸载时清理）；长寿命 realm 会随“曾经跑过作业的会话数”增长。现在归零即删，下次查询按需重新播种；`allows` 实测仍 ~300 ns。
+
+### 已测但否决
+
+宿主身份解析（`assertHostVersion`，8–9 ms/次）尝试按 scope 惰性读取、命中即停：8.8 → 8.9 ms，无差异（只有第一个可解析的 scope 付全量读取），未采用。
+
+### 验证
+
+rc.2 开发宿主 143/143（新增 4 项：作业计数播种与事件更新、他人/无主作业不计、owner 释放后重新播种、后代 walk 不查 registry）；真实 0.2.1-alpha.4 与 0.2.1-rc.2 CLI 上 replacement 策略 e2e 均通过；`check-startup-host`、`check-host-compat` 与三项资产检查通过。
+
+

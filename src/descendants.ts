@@ -15,6 +15,8 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 /** One live-descendant index: parent session id to the agents naming it. */
 export interface DescendantBuckets {
   readonly children: Map<string, Set<Agent>>
+  /** Every agent the buckets hold, so membership is one lookup and no service call. */
+  readonly live: Set<Agent>
   seeded: boolean
 }
 
@@ -23,7 +25,7 @@ export type DescendantPredicate = (agent: Agent) => boolean
 
 /** One empty index. */
 export function createDescendantBuckets(): DescendantBuckets {
-  return { children: new Map(), seeded: false }
+  return { children: new Map(), live: new Set(), seeded: false }
 }
 
 /** Add one live agent under the parent session its header names. */
@@ -31,6 +33,7 @@ export function indexDescendant(buckets: DescendantBuckets, agent: Agent, accept
   if (!accepts(agent)) return
   const parentId = agent.session.header.parentSession
   if (parentId === undefined) return
+  buckets.live.add(agent)
   const bucket = buckets.children.get(parentId)
   if (bucket === undefined) buckets.children.set(parentId, new Set([agent]))
   else bucket.add(agent)
@@ -48,6 +51,7 @@ export function indexDescendant(buckets: DescendantBuckets, agent: Agent, accept
  */
 export function detachDescendant(buckets: DescendantBuckets, agent: Agent, accepts: DescendantPredicate): boolean {
   if (!accepts(agent)) return true
+  buckets.live.delete(agent)
   const parentId = agent.session.header.parentSession
   const known = parentId !== undefined && buckets.children.get(parentId)?.delete(agent) === true
   return buckets.children.delete(String(agent.session.id)) || known
@@ -63,6 +67,7 @@ export function detachDescendant(buckets: DescendantBuckets, agent: Agent, accep
 export function seedDescendantsOnce(buckets: DescendantBuckets, live: () => readonly Agent[], accepts: DescendantPredicate): void {
   if (buckets.seeded) return
   buckets.children.clear()
+  buckets.live.clear()
   for (const agent of live()) indexDescendant(buckets, agent, accepts)
   buckets.seeded = true
 }

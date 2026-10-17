@@ -71,7 +71,8 @@ export function createBackgroundPolicy(ctx: Context, source: BackgroundConfigSou
   const isLiveJob = (status: string): boolean => status === 'running' || status === 'stopping'
   /** Apply one job lifecycle event to the per-owner counts; only a seeded owner moves. */
   const recordJobEvent = (event: { readonly type: string; readonly job: { readonly owner?: string; readonly kind: string } }): void => {
-    const counts = event.job.owner === undefined ? undefined : liveJobs.get(event.job.owner)
+    const owner = event.job.owner
+    const counts = owner === undefined ? undefined : liveJobs.get(owner)
     if (counts === undefined) return
     const delta = event.type === 'registered' ? 1 : event.type === 'settled' ? -1 : 0
     if (delta === 0) return
@@ -79,6 +80,10 @@ export function createBackgroundPolicy(ctx: Context, source: BackgroundConfigSou
     // for the next registration, the one direction a hold must never go.
     counts.all = Math.max(0, counts.all + delta)
     if (event.job.kind === 'subagent') counts.subagent = Math.max(0, counts.subagent + delta)
+    // Nothing left to count: drop the owner instead of retaining a zero entry
+    // for every session that ever ran one job. A later registration re-seeds
+    // from the registry the next time this owner is asked about.
+    if (counts.all === 0 && counts.subagent === 0 && owner !== undefined) liveJobs.delete(owner)
   }
   /**
    * How many live jobs this policy counts for one owner.

@@ -46,6 +46,79 @@ function indexFor(ctx: Context): DescendantBuckets {
   return index
 }
 
+/** One live job record, as the host lists it. */
+interface JobRecord { readonly owner?: string; readonly status?: string }
+/** The job event the host publishes for a registration or a settlement. */
+interface JobEvent { readonly type: string; readonly job: JobRecord }
+/** The subset of the host job service this gate needs. */
+interface JobsService {
+  list(owner: string): readonly JobRecord[]
+  readonly events?: { subscribe(filter: { owners: 'all' }, listener: (event: JobEvent) => void): () => void }
+}
+/** Live job counts per owner session id, maintained from job events. */
+interface JobsIndex {
+  readonly service: JobsService
+  readonly live: Map<string, number>
+  watching: boolean
+}
+const jobIndexes = new WeakMap<Context, JobsIndex>()
+
+/**
+ * The realm's job counts, subscribing to job events the first time it is asked.
+ *
+ * `list(owner)` answers with every retained record — settled ones included —
+ * and materializes a view per record, so the old decision paid O(all retained
+ * jobs) with a multi-microsecond constant on every checkpoint. Registered and
+ * settled are the only events that change liveness (stopping and removed do
+ * not), so one subscription keeps a count that answers the same question.
+ */
+function jobsFor(ctx: Context): JobsIndex | undefined {
+  const service = ctx.get('jobs') as unknown as JobsService | undefined
+  if (service === undefined) return undefined
+  let index = jobIndexes.get(ctx)
+  if (index === undefined) {
+    index = { service, live: new Map(), watching: false }
+    jobIndexes.set(ctx, index)
+    // The host drops an owner's job records with the owner's disposal, so the
+    // count goes with them: a long-lived realm keeps no entry per past owner.
+    const counts = index.live
+    ctx.on('agent/disposed', ({ agent }): undefined => { counts.delete(String(agent.session.id)) })
+    const events = service.events
+    if (events !== undefined) {
+      const counts = index.live
+      const stop = events.subscribe({ owners: 'all' }, event => {
+        const owner = event.job.owner
+        if (typeof owner !== 'string') return
+        if (event.type !== 'registered' && event.type !== 'settled') return
+        const known = counts.get(owner)
+        if (known === undefined) return
+        counts.set(owner, Math.max(0, known + (event.type === 'registered' ? 1 : -1)))
+      })
+      index.watching = true
+      ctx.effect(() => () => stop())
+    }
+  }
+  return index
+}
+
+/** Live jobs one owner has, counted once and then maintained by events. */
+function liveJobCount(ctx: Context, agent: Agent): number {
+  const index = jobsFor(ctx)
+  if (index === undefined) return 0
+  const owner = String(agent.session.id)
+  if (!index.watching) {
+    return index.service.list(owner).filter(job => job.owner === owner && (job.status === 'running' || job.status === 'stopping')).length
+  }
+  const known = index.live.get(owner)
+  if (known !== undefined) return known
+  let count = 0
+  for (const job of index.service.list(owner)) {
+    if (job.owner === owner && (job.status === 'running' || job.status === 'stopping')) count += 1
+  }
+  index.live.set(owner, count)
+  return count
+}
+
 /**
  * Whether the session owns any live subagent descendant at any depth.
  *
@@ -67,16 +140,19 @@ export function hasLiveSubagents(ctx: Context, agent: Agent): boolean {
   const index = indexFor(ctx)
   seedDescendantsOnce(index, () => ctx.agents.list(), isSubagentDescendant)
 
+  const root = String(agent.session.id)
+  const first = index.children.get(root)
+  if (first === undefined || first.size === 0) return false
   const visited = new Set<string>()
-  const pending = [String(agent.session.id)]
+  const pending = [root]
   while (pending.length > 0) {
     const parentId = pending.pop()
     if (parentId === undefined) continue
     for (const child of index.children.get(parentId) ?? []) {
       if (visited.has(child.id)) continue
-      // An entry survives its agent until the disposal event invalidates the
-      // index; never count one the live registry no longer knows.
-      if (ctx.agents.get(child.id) !== child) continue
+      // The index drops an entry together with its disposal; membership is
+      // exactly "still live", answered without a registry round trip.
+      if (!index.live.has(child)) continue
       visited.add(child.id)
       pending.push(String(child.session.id))
     }
@@ -86,9 +162,5 @@ export function hasLiveSubagents(ctx: Context, agent: Agent): boolean {
 
 /** Whether the session owns a background job that has not settled. */
 export function hasLiveJobs(ctx: Context, agent: Agent): boolean {
-  const jobs = ctx.get('jobs')
-  if (jobs === undefined) return false
-  return jobs
-    .list(agent.session.id)
-    .some((job) => job.owner === agent.session.id && (job.status === 'running' || job.status === 'stopping'))
+  return liveJobCount(ctx, agent) > 0
 }
