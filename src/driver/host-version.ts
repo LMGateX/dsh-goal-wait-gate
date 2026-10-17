@@ -77,6 +77,15 @@ export const supportedHosts: readonly HostProfile[] = [
     driverSha256: '255483fbf86bed0dac5f641d89684de1933695e2c034475b2fa3953ec7f1ff92',
     driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true },
   },
+  // 0.2.1-rc.2 is the next candidate on the same bundle: its release only moved
+  // the Web search and model-label plugins, leaving every continuation package
+  // byte-identical to rc.1. New identity, rc.1 behavior, same stable Cordis.
+  {
+    distribution: '0.2.1-rc.2',
+    cordis: '4.0.5',
+    driverSha256: '255483fbf86bed0dac5f641d89684de1933695e2c034475b2fa3953ec7f1ff92',
+    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true },
+  },
 ]
 
 /** Packages whose exact version must equal the detected distribution version. */

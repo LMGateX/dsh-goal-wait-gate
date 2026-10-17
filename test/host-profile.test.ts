@@ -14,12 +14,13 @@ const profileFor = (distribution: string): HostProfile => {
   assert.ok(profile, 'pinned host ' + distribution)
   return profile
 }
-const rc2 = profileFor('0.2.0-rc.2')
+const baseline = profileFor('0.2.0-rc.2')
 const alpha = profileFor('0.2.1-alpha.1')
 const alpha2 = profileFor('0.2.1-alpha.2')
 const alpha3 = profileFor('0.2.1-alpha.3')
 const alpha4 = profileFor('0.2.1-alpha.4')
 const rc1 = profileFor('0.2.1-rc.1')
+const rc2 = profileFor('0.2.1-rc.2')
 
 /** Pinned profile of the host this suite really runs on; the same suite must pass on each. */
 function detectInstalledProfile(): HostProfile {
@@ -79,29 +80,31 @@ async function cancelQueuedRound(h: NativeFixture): Promise<{ parked: boolean }>
 }
 
 test('artifact identity selects the exact ported behavior of that pinned host', () => {
-  assert.deepEqual(matchHostProfile(facts(rc2)).driver, { removeCancelledQueuedMessage: false, joinsProgressingDescendants: false })
+  assert.deepEqual(matchHostProfile(facts(baseline)).driver, { removeCancelledQueuedMessage: false, joinsProgressingDescendants: false })
   assert.deepEqual(matchHostProfile(facts(alpha)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: false })
   assert.deepEqual(matchHostProfile(facts(alpha2)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: false })
   assert.deepEqual(matchHostProfile(facts(alpha3)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true })
   assert.deepEqual(matchHostProfile(facts(alpha4)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true })
   assert.deepEqual(matchHostProfile(facts(rc1)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true })
+  assert.deepEqual(matchHostProfile(facts(rc2)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true })
   assert.equal(matchHostProfile(facts(alpha, { '@deepseek-ai/dsh-session': alpha.distribution })).distribution, '0.2.1-alpha.1')
 })
 
 test('a byte-identical republish is a new identity with the same ported behavior', () => {
-  // 0.2.1-alpha.2 republishes the alpha.1 driver and 0.2.1-alpha.4 republishes
-  // the alpha.3 driver; each is still its own pinned identity, and a host that
-  // self-reports one of them must be admitted with that artifact's behavior.
-  for (const [republish, original] of [[alpha2, alpha], [alpha4, alpha3]] as const) {
+  // 0.2.1-alpha.2 republishes the alpha.1 driver, 0.2.1-alpha.4 republishes the
+  // alpha.3 driver and 0.2.1-rc.2 republishes the rc.1 driver; each is still its
+  // own pinned identity, and a host that self-reports one of them must be
+  // admitted with that artifact's behavior.
+  for (const [republish, original] of [[alpha2, alpha], [alpha4, alpha3], [rc2, rc1]] as const) {
     assert.notEqual(republish.distribution, original.distribution)
     assert.equal(republish.driverSha256, original.driverSha256)
     assert.equal(republish.cordis, original.cordis)
     assert.deepEqual(republish.driver, original.driver)
     assert.deepEqual(matchHostProfile(facts(republish)).driver, original.driver)
   }
-  // 0.2.1-rc.1 republishes the alpha.4 driver once more, this time with Cordis
-  // graduated to the stable 4.0.5 release: same fingerprint, same behavior, but
-  // its own Cordis identity, which is why it is not in the pair loop above.
+  // 0.2.1-rc.1 republishes the alpha.4 driver, but Cordis graduated to the
+  // stable 4.0.5 release in the same step, so it cannot be paired with alpha.4
+  // in the loop above; 0.2.1-rc.2 republishes rc.1 and joins that loop.
   assert.notEqual(rc1.distribution, alpha4.distribution)
   assert.equal(rc1.driverSha256, alpha4.driverSha256)
   assert.notEqual(rc1.cordis, alpha4.cordis)
@@ -119,12 +122,12 @@ test('an unpinned distribution version is refused instead of borrowing a port', 
 })
 
 test('a matching version without the exact bundle fingerprint is refused', () => {
-  assert.throws(() => matchHostProfile({ ...facts(alpha), driverSha256: rc2.driverSha256 }), /fingerprint/)
+  assert.throws(() => matchHostProfile({ ...facts(alpha), driverSha256: baseline.driverSha256 }), /fingerprint/)
 })
 
 test('a mixed first-party version inside one distribution is refused', () => {
-  assert.throws(() => matchHostProfile(facts(rc2, { '@deepseek-ai/dsh-goal': '0.2.0-rc.3' })), /version mismatch.*dsh-goal/)
-  assert.throws(() => matchHostProfile(facts(rc2, { '@deepseek-ai/cordis': '4.0.5-alpha.1' })), /version mismatch.*cordis/)
+  assert.throws(() => matchHostProfile(facts(baseline, { '@deepseek-ai/dsh-goal': '0.2.0-rc.3' })), /version mismatch.*dsh-goal/)
+  assert.throws(() => matchHostProfile(facts(baseline, { '@deepseek-ai/cordis': '4.0.5-alpha.1' })), /version mismatch.*cordis/)
 })
 
 test('the installed pinned host is detected and keeps its own published queued-round behavior', async () => {
@@ -200,7 +203,7 @@ test('an unpinned newer host is refused before any driver is mounted', async t =
 })
 
 test('a version match without the pinned bundle fingerprint is refused at startup', async t => {
-  simulateHost(t, { ...alpha, driverSha256: rc2.driverSha256 })
+  simulateHost(t, { ...alpha, driverSha256: baseline.driverSha256 })
   const h = new NativeFixture()
   try {
     await assert.rejects(h.initialize(), /fingerprint/)

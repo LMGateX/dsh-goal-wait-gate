@@ -61,6 +61,7 @@ Support is per published artifact identity, not a version range. The host profil
 | 0.2.1-alpha.3 | 4.0.5-alpha.2 | 255483fb…953ec7f1ff92 | Additionally reserves no round until the agent's progressing descendants settle (optional subagent service); queued-round settlement is unchanged from alpha.1. |
 | 0.2.1-alpha.4 | 4.0.5-alpha.2 | 255483fb…953ec7f1ff92 | The distribution moved while the bundle did not: identity only, behavior unchanged from alpha.3. |
 | 0.2.1-rc.1 | 4.0.5 | 255483fb…953ec7f1ff92 | The release candidate republishes that same driver bundle while Cordis graduates to the stable 4.0.5 release (same code): identity only, behavior unchanged from alpha.3/alpha.4. |
+| 0.2.1-rc.2 | 4.0.5 | 255483fb…953ec7f1ff92 | This candidate only moved the Web search and model-label plugins; every continuation package is byte-identical to rc.1, so behavior is unchanged again. |
 
 Every published difference is profile data, and the behavior-selection tests fail if either pin or its flag is changed. 0.2.1-alpha.1 no longer publishes the `./invariant` companion subpath, and an installation of that host may not ship `@deepseek-ai/dsh-invariants`; the companion is detected beside the resolved driver and is optional on every pin. The `native` strategy always mounts the actual published callback of the running host, so it inherits that host's own behavior without this port.
 

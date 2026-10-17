@@ -184,6 +184,28 @@ Related evidence and ADR: ADR-0001、ADR-0002、docs/startup-driver.md、src/dri
 
 结论：0.2.1-rc.1 对 goal continuation 面零改动，alpha.3/alpha.4 的结论原样成立——原生 driver 已覆盖“进行中的后代”但仍完全不读后台 Job，闸门的必要性未消除。rc.1 的适配差异只有两处身份数据（distribution 版本、Cordis 4.0.5）与矩阵里的一行；真实 rc.1 宿主上的 e2e 与 native suite 证明交付路径与行为在发行候选版上仍然成立。
 
+## 复核记录：DSH 0.2.1-rc.2
+
+按上文模板填写；只使用发布包内可核对的证据，不推断 master。
+
+```text
+DSH version / upstream commit or package evidence: 0.2.1-rc.2（GitHub release 发布于 2026-10-17T08:16:33Z；npm dist-tag next 于发布后指向 rc.2）；driver 身份以 dsh-goal-round-driver 0.2.1-rc.2 的 lib/index.js 为准（SHA-256 255483fb…953ec7f1ff92，与 rc.1 逐字节相同），并与 rc.1 逐包对比 goal-round-driver、goal、tool-goal、command-goal、agent、agent-loop、jobs、jobs-local、tool-jobs、subagent、tool-subagent、session、llm、scope、system-prompt、tools、app-boot
+Plugin version / commit: 0.4.19 分支 feat/dsh-0.2.1-alpha-support（本次 pin 提交）
+Changes in scheduling seam: 无。上述发布包的 lib/ 除 package.json 里的自身版本号与兄弟包精确版本外逐字节相同（diff -r 排除 package.json 无输出）；driver 仍只等待“进行中的后代”，仍完全不读后台 Job。
+Changes in phase / activation / revision / ownership: 无（goal 执行 bundle 未变化）。
+Changes in edit and completion authority: 无（tool-goal 未变化）。
+Changes in model-visible goal context: 无。
+Changes in jobs / subagent lifecycle: 无执行代码变化；Cordis 仍为 ~4.0.5（解析为 4.0.5），dsh-invariants 与 dsh-subagent-in-process-driver 仍不随发行版提供。
+New in this release（与 goal 无关但影响插件交付）: 发布内容集中在 Web 搜索新 API 与模型标签：base bundle 新增 web-deepseek-api 行、web-app bundle 新增 ui-deepseek-model-label-1017 行，客户端 slot catalog 把 conversation.input.model.label 的占用者标为新增插件；插件页所用的 plugins.row.config 槽在 rc.2 的两个宿主包里仍然存在（命中 dsh-client-ui-plugin-manager 与 dsh-cordis-client-runner）。
+Automated checks actually run and results: typecheck 通过；rc.2 开发宿主 139/139 通过（rc.2 身份与 republish 行为并入既有断言）；真实 0.2.1-rc.2 continuation 包集合（29 个 @deepseek-ai 包，用 npm 装出、与 repo 的开发包组合成隔离 realm）同一套 139 项中 137 通过、2 跳过、0 失败；check-startup-host 对该 realm 报 pinned 0.2.1-rc.2 且 src/ 类型检查通过；check-host-compat 0.2.1-rc.2 通过（按宿主装 Cordis 4.0.5）。
+Isolated integration scenarios actually run and results: 未能运行完整 CLI e2e——发布当时 npm 上的 rc.2 发行不完整：dsh 元包依赖的 @deepseek-ai/dsh-tool-pwsh-persistent@0.2.1-rc.2 与 dsh-web-app 依赖的 @deepseek-ai/dsh-client-ui-settings-account@0.2.1-rc.2 均未发布（其余 81 个 scoped 直接依赖齐全），故 pnpm add @deepseek-ai/dsh@0.2.1-rc.2 在解析阶段即失败。此缺口属上游发布问题，与本插件无关；补齐后可原样重跑 scripts/e2e-isolated.mjs。
+Skipped checks / limitations / unresolved risks: 未验证 GUI、真实模型会话与完整 CLI 启动（原因见上）；两项 one-shot 后台工具场景在 rc.2 上仍因宿主不发布该模式而跳过。未写入本机 live profile，未安装、未发版。
+Decision: 新增 0.2.1-rc.2 pin——与 rc.1 同 fingerprint、同 behavior、同 Cordis，仅新增身份行；必要性结论与 alpha.3/alpha.4/rc.1 相同，保留闸门。
+Related evidence and ADR: ADR-0001、ADR-0002、docs/startup-driver.md、src/driver/provenance.json
+```
+
+结论：rc.2 是本系列里最窄的一次变更——对 goal continuation 面零改动（driver 与全部 continuation 包逐字节相同），改动只在 Web 搜索与模型标签；插件适配只剩一行身份。发布当时 npm 上的 rc.2 发行不完整（两个包缺失），因此完整 CLI e2e 留待上游补齐后重跑，其余检查均在真实 rc.2 continuation 包上完成。
+
 ## 观察记录：插件页只渲染 bundle，不属于 bundle 的 Loader 行没有入口
 
 2026-10-05 于 DSH 0.2.1-alpha.1 复核：`dsh-client-ui-plugin-manager` 的 Plugins 面板以 `packages = listBundles().map(bundle => packageView(bundle, plugins))` 组卡，行只挂在自己 bundle 的卡片内；`dsh-plugin-manager` 的 `listBundles()` 对**非 bundle 依赖**只在它同时被选入 `dsh.profile.bundles` 时才列出（且以 `not-bundle` 错误呈现），而 `bundleManifest()` 只认声明了 `package.json.dsh.bundle.patch` 的包。因此"普通依赖 + 手写 `insert` 行"这种交付方式虽然能正常挂载，却在插件页完全不可见，也没有启停入口；设置里的只读「插件列表」虽然直接读 Loader 因而能看到该行，但那是诊断视图而非管理入口。

@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url'
 import semver from 'semver'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const DEFAULT_HOSTS = ['0.1.7-alpha.2', '0.1.7-rc.2', '0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-alpha.2', '0.2.1-alpha.3', '0.2.1-alpha.4', '0.2.1-rc.1']
+const DEFAULT_HOSTS = ['0.1.7-alpha.2', '0.1.7-rc.2', '0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-alpha.2', '0.2.1-alpha.3', '0.2.1-alpha.4', '0.2.1-rc.1', '0.2.1-rc.2']
 const HOSTS = process.argv.slice(2).length > 0 ? process.argv.slice(2) : DEFAULT_HOSTS
 const DSH_PACKAGES = [
   '@deepseek-ai/dsh-agent',
@@ -46,6 +46,7 @@ const CORDIS_BY_HOST = {
   '0.2.1-alpha.3': '4.0.5-alpha.2',
   '0.2.1-alpha.4': '4.0.5-alpha.2',
   '0.2.1-rc.1': '4.0.5',
+  '0.2.1-rc.2': '4.0.5',
 }
 const cordisFor = host => CORDIS_BY_HOST[host] ?? CORDIS_VERSION
 const WORK = join(tmpdir(), 'dsh-goal-wait-gate-host-compat')

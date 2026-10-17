@@ -134,7 +134,7 @@ rc.1 只移动发行版身份，不移动 goal continuation 的实现：dsh-goal
 
 实测结果（2026-10-17，本机）：
 
-- rc.2 开发宿主：139/139。
+- 0.2.0-rc.2 开发宿主：139/139。
 - 真实 rc.1 宿主（/tmp 一次性隔离副本，链接 npm 装出的全部 303 个 @deepseek-ai 包；rc.1 已不发布的 dsh-subagent-in-process-driver 必须缺席，否则身份表会读到混合版本）：139 项中 137 通过、2 跳过、0 失败。两项跳过与 alpha.4 相同——宿主不再发布 one-shot 后台委派模式，fixture 按宿主能力跳过。
 - `check-startup-host`：真实 rc.1 安装报 pinned 0.2.1-rc.1，303 个宿主包链接下 src/ 类型检查通过。
 - `check-host-compat`：8 个宿主全过（按宿主 Cordis 版本：alpha.1/alpha.2 → 4.0.5-alpha.1，alpha.3/alpha.4 → 4.0.5-alpha.2，rc.1 → 4.0.5）。
@@ -143,5 +143,17 @@ rc.1 只移动发行版身份，不移动 goal continuation 的实现：dsh-goal
 
 未做：本机 live profile 安装、发版、GUI 与真实模型会话验证。
 
+## 0.2.1-rc.2 支持核对（0.4.19 分支）
 
+rc.2 的改动只在 Web 搜索与模型标签：dsh-goal-round-driver 0.2.1-rc.2 与 rc.1 逐字节相同（SHA-256 255483fb…），goal、tool-goal、command-goal、agent、agent-loop、jobs、jobs-local、tool-jobs、subagent、tool-subagent、session、llm、scope、system-prompt、tools 与 app-boot 同样（`diff -r` 排除 package.json 无输出）；Cordis 仍是 `~4.0.5`。适配只有一行 pin 与矩阵一行（`check-host-compat` 补 rc.2 → Cordis 4.0.5）。
+
+实测结果（2026-10-17，本机）：
+
+- 0.2.0-rc.2 开发宿主：139/139。
+- 真实 rc.2 continuation 包集合（npm 装出的 29 个 @deepseek-ai 包，与 repo 的开发包组合成隔离 realm；rc.2 不发布的 dsh-subagent-in-process-driver 必须缺席）：139 项中 137 通过、2 跳过、0 失败，跳过项与 alpha.4/rc.1 相同。
+- `check-startup-host`：该 realm 报 pinned 0.2.1-rc.2，类型检查通过。
+- `check-host-compat`：0.2.1-rc.2 通过（按宿主装 Cordis 4.0.5）。
+- 客户端槽位：rc.2 的 dsh-client-ui-plugin-manager 与 dsh-cordis-client-runner 仍带 `plugins.row.config`。
+
+未做：完整 CLI e2e 被上游发布缺口挡住——发布当时 `@deepseek-ai/dsh@0.2.1-rc.2` 在 pnpm 解析阶段就失败，因为 `@deepseek-ai/dsh-tool-pwsh-persistent@0.2.1-rc.2` 与 `@deepseek-ai/dsh-client-ui-settings-account@0.2.1-rc.2` 尚未发布（其余 81 个 scoped 直接依赖齐全）。这是上游发布问题，与本插件无关；补齐后重跑 `node scripts/e2e-isolated.mjs --strategy replacement|activation` 即可。GUI 与真实模型会话未验证；本机 live profile 未写入、未安装、未发版。
 
