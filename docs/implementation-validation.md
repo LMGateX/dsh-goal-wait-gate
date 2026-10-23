@@ -187,4 +187,12 @@ rc.2 的改动只在 Web 搜索与模型标签：dsh-goal-round-driver 0.2.1-rc.
 
 rc.2 开发宿主 143/143（新增 4 项：作业计数播种与事件更新、他人/无主作业不计、owner 释放后重新播种、后代 walk 不查 registry）；真实 0.2.1-alpha.4 与 0.2.1-rc.2 CLI 上 replacement 策略 e2e 均通过；`check-startup-host`、`check-host-compat` 与三项资产检查通过。
 
+## 0.4.21：native-join 宿主把 subagent 等待交还宿主
+
+2026-10-23 的 LMGateX 会话（`session-a367562c-9071-4f62-b261-5854938f16e4`）暴露了旧 replacement policy 的一个边界：`interrupt` 在存在未领取 inbox 工作时会保留 live child Agent（parked FIFO），而旧 policy 的“任何已注册后代”判定会把它当作 live work。该会话的 goal 创建后 14h56m 没有拿到一轮，四个相关 session.lock 一直打开；宿主 `waitForChildren` 则会跳过这个停靠子。
+
+修复：`createBackgroundPolicy` 增加 `BackgroundPolicyOptions.nativeSubagentJoin`，`mode.ts` / `startup.ts` 从 pinned profile 的 `profile.driver.joinsProgressingDescendants` 传入。该值为 true 时，replacement 不安装 descendant/epoch guard，由宿主 `waitForChildren` 负责 running 后代和 parked 子；Job guard 保留。`activation` 策略不变；native-join 宿主上如遇同类停靠，可显式 `waitForSubagents=false`。
+
+验证：typecheck 与 build 通过；0.2.0-rc.2 开发宿主全套 144/144 通过（新增 native-join policy 用例）；修复后的 tarball 在真实 0.2.1-rc.2 CLI 的一次性 DSH home 内跑 `replacement` e2e，12/12 通过，无 fallback。未重跑 alpha.3+ 真实宿主的完整 suite；宿主身份表与 provenance 未改。
+
 
