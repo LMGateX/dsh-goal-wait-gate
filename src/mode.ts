@@ -438,7 +438,7 @@ class RowStrategy implements StrategyHandle {
             } catch {
               return { waitForJobs: config.waitForJobs, waitForSubagents: config.waitForSubagents }
             }
-          }), profile.driver)
+          }, { nativeSubagentJoin: profile.driver.joinsProgressingDescendants }), profile.driver)
           driverCtx.effect(() => () => driver.stop(), 'goal-wait-gate replacement driver')
         },
       }) as unknown as Fiber

@@ -23,6 +23,8 @@ This is a known upstream behavior that is still unfixed **for background jobs** 
 - a background job owned by the session whose status is `running` or `stopping` (read synchronously from `ctx.jobs.list`), or
 - a live subagent descendant at any depth (live agents whose session header names a parent and carries the `subagent` origin), which covers one-shot and continuable children without resuming anything.
 
+On a pinned host whose driver already joins progressing descendants (`joinsProgressingDescendants`), the `replacement` strategy leaves the subagent wait to that native join and does not add the live-descendant hold above; this is what keeps an idle parked child from freezing a goal the host deliberately lets through. Jobs still gate.
+
 **Checkpoints.** The gate evaluates at `agent/turn-stopping` (the turn loop awaits it, so the decision lands before the agent turns idle) and at `agent/status` with status `idle` (registered with `prepend` as a safety net for turn shapes that end without `turn-stopping`).
 
 **Hold and release.** While live work exists and the goal is `active` + `armed`, the gate calls `ctx.goals.disarm` and remembers the goal id it holds for the exact live agent; release reads the current revision. When no live work remains — the work settled *and* its completion-notice turn has ended — the gate calls `ctx.goals.resume` on its own hold. The official driver then performs its normal next round.
@@ -100,7 +102,7 @@ Policy defaults live in the plugin's Schemastery schema: `strategy=activation`, 
 |---|---|---|
 | `strategy` | `activation` | Which implementation owns goal continuation: `activation`, `replacement`, `native` or `off` (see the table above). |
 | `waitForJobs` | `true` | Hold continuation while the session owns running/stopping jobs. |
-| `waitForSubagents` | `true` | Hold continuation while the session owns live subagent descendants. |
+| `waitForSubagents` | `true` | Hold continuation while the session owns live subagent descendants. On a native-join `replacement` host the host's `waitForChildren` owns this wait; the field does not add a descendant hold there. |
 | `maxHoldMs` | `0` | `0` holds indefinitely. A positive value releases a hold that outlives it, logs one warning per hold, and leaves the rest of that wait ungated (the release is not undone by the gate's own goal-change evaluation) — an escape hatch for stuck background work, not a silent stop. |
 
 Invalid configuration fails at load with an error naming the field. A saved change is validated on the same path: a bad value is reported and the last good policy stays in force.

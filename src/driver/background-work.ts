@@ -8,11 +8,27 @@ import type { DriverPolicy } from './native-driver.ts'
 
 export interface BackgroundConfig { waitForJobs?: boolean; waitForSubagents?: boolean }
 
+/**
+ * What the pinned host's driver already owns.
+ *
+ * A host whose `waitForChildren` joins progressing descendants has already
+ * made the subagent decision before this policy is asked. Adding this plugin's
+ * older “any registered descendant” hold on top of that join is what kept a
+ * parked (idle, pending-inbox) child holding a goal the host deliberately lets
+ * through. When the host owns the join, this policy leaves subagents to it and
+ * gates only published work the host does not observe: Jobs.
+ */
+export interface BackgroundPolicyOptions {
+  /** The pinned host driver joins progressing descendants before reserving. */
+  readonly nativeSubagentJoin?: boolean
+}
+
 /** Job lifecycle events this policy counts; hoisted so no event allocates it. */
 const JOB_LIFECYCLE: ReadonlySet<string> = new Set(['registered', 'settled', 'stopping', 'removed'])
 /** Settings read at the moment of a decision, so a saved policy never remounts the driver. */
 export type BackgroundConfigSource = BackgroundConfig | (() => BackgroundConfig)
-export function createBackgroundPolicy(ctx: Context, source: BackgroundConfigSource = {}): DriverPolicy {
+export function createBackgroundPolicy(ctx: Context, source: BackgroundConfigSource = {}, options: BackgroundPolicyOptions = {}): DriverPolicy {
+  const nativeSubagentJoin = options.nativeSubagentJoin === true
   const settings = (): BackgroundConfig => {
     const value = typeof source === 'function' ? source() : source
     return value ?? {}
@@ -184,7 +200,10 @@ export function createBackgroundPolicy(ctx: Context, source: BackgroundConfigSou
       if (unavailable) throw new Error('Published background work cannot be observed safely')
       if (closed || handoffs.has(agent) || unplaceable.size > 0) return false
       if (liveJobCount(agent) > 0) return false
-      if (settings().waitForSubagents !== false && (hasDescendant(agent) || (epochRefs.get(agent) ?? 0) > 0)) return false
+      // The host's own join is the authority on a native-join profile; a second
+      // descendant/epoch hold here would re-introduce the parked-child wait the
+      // host deliberately does not perform.
+      if (!nativeSubagentJoin && settings().waitForSubagents !== false && (hasDescendant(agent) || (epochRefs.get(agent) ?? 0) > 0)) return false
       return true
     },
     subscribe(wake) {
@@ -216,7 +235,7 @@ export function createBackgroundPolicy(ctx: Context, source: BackgroundConfigSou
         watchingJobs = true
         liveJobs.clear()
       }
-      if (settings().waitForSubagents !== false) {
+      if (!nativeSubagentJoin && settings().waitForSubagents !== false) {
         /**
          * One activation started.
          *

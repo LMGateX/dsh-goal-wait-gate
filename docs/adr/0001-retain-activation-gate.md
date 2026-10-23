@@ -57,8 +57,8 @@ status: accepted
 上游自 `0.2.1-alpha.3` 起让官方 driver 原生等待“进行中的后代”（`waitForChildren`：join 仍在推进的后代，刻意让停靠的 idle inbox 保持常驻）。本记录的决定不变，但两套策略的差异范围本轮在真实宿主上实测清楚：
 
 1. 本插件的判定单位是**活着的后代 Agent**（live activation epoch），不是“后代当前是否在跑”。
-2. 子代理回合结束后，宿主保留的是可寻址的 activation residency，而不是 live Agent（实测 ≤250ms 内从 `agents.list` 消失，`subagents.list` 仍为 1）。因此停靠不会被无限期按住，也不存在“子代理一停靠 goal 就卡死”。
-3. 两套策略的语义差异只剩“子代理停止跑动 → Agent 被回收 / 结算通知被父 agent 消费”这段窗口。在这段窗口内不释放是有意的：结算通知尚未被消费时插入一轮会与回报竞争。
-4. 结论：`waitForSubagents` 保持默认 `true`；要与上游完全一致（只等推进中的后代）的用户显式设 `false`。该契约由 fixture 场景“parked activation 不 hold”锁定，`0.2.1-alpha.3+` 上 `replacement` 策略的必需增量仍然只是后台 Job。
+2. 正常结束的子代理回合，宿主保留的是可寻址的 activation residency，而不是 live Agent（实测 ≤250ms 内从 `agents.list` 消失，`subagents.list` 仍为 1）。这覆盖了正常停靠，但不能推广成“所有停靠都不保留 live Agent”。
+3. `interrupt` 且存在未领取 inbox 工作时，宿主还会保留 live child Agent 的 parked FIFO（`next-step` 不被丢弃，等待下一次唤醒才恢复）。2026-10-23 的 LMGateX 会话实证：两个 review 子被 interrupt 后保留了未消费 `next-step`，其父 `c170ae89` 因此一直不 settle；上游 `waitForChildren` 仍会跳过这个停靠子，而旧 policy 的“任何已注册后代”把它算成 live work，父 goal 创建后 15 小时没有拿到一轮。
+4. 结论：`replacement` 在 `joinsProgressingDescendants` 宿主上不再叠加 descendant/epoch hold，subagent 的 authority 是宿主 `waitForChildren`；Job 仍由插件 gate。`activation` 保留 disarm/resume 与 `waitForSubagents` 旧语义（默认 `true`）；在 native-join 宿主上若遇到同类停靠，用户可显式设 `waitForSubagents=false`。该边界由 `background-work.test.ts` 的 native-join 用例与宿主 `waitForChildren` 的 parked 用例共同锁定。
 
 证据与逐项复核见[观察清单](<../upstream-goal-watch.md>)的 0.2.1-alpha.3 / alpha.4 记录。

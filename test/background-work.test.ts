@@ -295,3 +295,30 @@ test('overlapping activations over one chain release only when the last one ends
     assert.equal(policy.allows(host.parent), true, 'the last epoch releases the chain')
   } finally { stop() }
 })
+
+test('a host that joins progressing descendants keeps subagent work out of this policy', async () => {
+  const child = agent('child-1', { parentSession: 'parent-1', origin: 'subagent' })
+  const host = fakeHost([child])
+  const policy = createBackgroundPolicy(
+    host.ctx,
+    { waitForJobs: true, waitForSubagents: true },
+    { nativeSubagentJoin: true },
+  )
+  const stop = policy.subscribe(() => {})
+  try {
+    // A live child and an open epoch would each hold on a host without the
+    // native join. With the join, the driver waits for progressing descendants
+    // before this policy is asked, and deliberately lets a parked one through.
+    host.emit('subagent/start', { runId: 'run-join', id: 'child-1', provider: 'in-process', local: true }, host.parent)
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(policy.allows(host.parent), true, 'the native join owns the descendant wait')
+
+    // Jobs are still ours: the host publishes no equivalent join for them.
+    const job = host.register('job-1')
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(policy.allows(host.parent), false, 'a live Job still holds')
+    host.settle(job)
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(policy.allows(host.parent), true, 'the settled Job releases')
+  } finally { stop() }
+})

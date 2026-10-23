@@ -133,7 +133,7 @@ Changes in model-visible goal context: 无（轮次提示未变）。
 Changes in jobs / subagent lifecycle: driver 仍不读取 jobs；jobs 三包仅改 job id 格式（<kind>-N → <kind>-<16 位 uuid>）、job 会话生命周期记录与通知截断文案。subagent 新增独立 preset 选择与恢复。
 Automated checks actually run and results: typecheck 通过；129/129 测试通过；check-startup-host 对真实 0.2.1-alpha.3 安装报 pinned 并类型检查通过；check-host-compat 0.2.1-alpha.3 通过；bundle/client/settings 检查通过。
 Isolated integration scenarios actually run and results: native fixture 上同一场景分别以 alpha.3 与 alpha.2 身份运行：alpha.3 在有 running 后代时 0 轮、0 新请求；alpha.2 同场景立即准入 1 轮。未运行真实模型会话。
-Skipped checks / limitations / unresolved risks: 未验证真实 profile 安装与 GUI；停靠（parked）后代不阻塞宿主是上游刻意行为，本插件 policy 则按"活着的后代 Agent"计入——该差异已在 alpha.4 复核中实测（见下一节）：停靠只剩 activation residency，没有 live Agent，因此不计入，语义差异仅限"停止跑动到 Agent 被回收/结算通知被消费"这段窗口。
+Skipped checks / limitations / unresolved risks: 未验证真实 profile 安装与 GUI；停靠（parked）后代不阻塞宿主是上游刻意行为，本插件 policy 则按"活着的后代 Agent"计入——该差异已在 alpha.4 复核中实测（见下一节）：停靠只剩 activation residency，没有 live Agent，因此不计入，语义差异仅限"停止跑动到 Agent 被回收/结算通知被消费"这段窗口（2026-10-23 补充：该实测只覆盖正常结束；`interrupt` + 未领取 inbox 会保留 live Agent，见下一节）。
 Decision: 新增 0.2.1-alpha.3 pin 并复现其 descendant join；activation 与 replacement 两种策略在该 pin 上均可用
 Related evidence and ADR: ADR-0001、ADR-0002、docs/startup-driver.md、src/driver/provenance.json
 ```
@@ -156,7 +156,7 @@ New in this release（与 goal 无关但影响插件交付）: 插件兼容性�
 Automated checks actually run and results: typecheck 通过；rc.2 开发宿主 136/136 通过（含 byte-identical republish 身份测试、事件路径 index upkeep 与并发 epoch 测试）；真实 0.2.1-alpha.4 宿主（隔离副本 + npm 装出的 @deepseek-ai/* 包）同一套 136 项中 134 通过、2 跳过、0 失败；check-startup-host 对真实 0.2.1-alpha.4 安装（npm 装出的 34 个包）报 pinned 0.2.1-alpha.4 且 src/ 类型检查通过；check-host-compat 0.2.1-alpha.4 通过（隔离副本内安装该版本、legacy 入口与测试类型检查通过、全部 peer range 接受预发布版本）；check:bundle/check:settings/check:client 通过；tsc -p tsconfig.build.json + copy-driver-assets 构建通过。
 Isolated integration scenarios actually run and results: 在 /tmp 的一次性 DSH home 内用真实 @deepseek-ai/dsh@0.2.1-alpha.4 CLI 跑 scripts/e2e-isolated.mjs，replacement 与 activation 两种策略各 12 项检查全绿：profile 安装成功、真实服务器启动、bundle 层接管 goal-round-driver 行、状态记录写明 host.distribution=0.2.1-alpha.4、cordis=4.0.5-alpha.2、driverSha256=255483fb…、无 fallback、状态路由可读。未运行真实模型会话。另在真实 alpha.4 realm 上实测了“子代理停靠”的实际语义：子代理回合结束后 live Agent 在 ≤250ms 内消失（subagents.list 仍为 1），停靠保留的是可寻址的 activation residency 而不是 Agent，因此本插件“活着的后代 Agent”判定不会被停靠无限按住，多守的只是“停止跑动→Agent 被回收/结算通知被消费”这段窗口。该结论已固化为 fixture 场景（parked activation 不 hold）。
 Skipped checks / limitations / unresolved risks: 未验证 GUI，也未在真实模型会话中验证目标可见性。native fixture 现在可以装配真实 alpha.3+ realm：按安装物挂载 sandbox-local → sandbox-policy → fs-sandbox → working-directory 这条 provider 链（缺任一环 subagent 插件都会停在 pending、ctx.subagents 为 undefined），并用 startActivation/startContinuable 二选一启动后台子代理，故同一份 suite 在 rc.2 与 alpha.4 上都能跑。仍有两项在 alpha.3+ 上跳过：该宿主不再发布 one-shot 后台工具模式，也没有对应的 disposal-backed subagent Job，那两个场景要驱动的模式本身不存在（fixture 现按宿主能力跳过，rc.2 上仍执行）。dsh-session-persistence-jsonl 自 alpha.3 起从默认导出改为 name/apply 功能插件，fixture 已能兼容两种形态。
-Decision: 新增 0.2.1-alpha.4 pin（与 alpha.3 同 fingerprint、同 behavior，仅新增身份行）；必要性结论与 alpha.3 相同——保留闸门，且 waitForSubagents 保持默认 true（实测不支持“停靠即卡死”的担忧）
+Decision: 新增 0.2.1-alpha.4 pin（与 alpha.3 同 fingerprint、同 behavior，仅新增身份行）；必要性结论与 alpha.3 相同——保留闸门，且 waitForSubagents 保持默认 true（该结论已被 2026-10-23 的 interrupt/parked live Agent 实测限定；replacement 现改为在 native-join 宿主上不叠加 descendant guard，见下一节）
 Related evidence and ADR: ADR-0001、ADR-0002、docs/startup-driver.md、src/driver/provenance.json
 ```
 
@@ -211,4 +211,13 @@ Related evidence and ADR: ADR-0001、ADR-0002、docs/startup-driver.md、src/dri
 2026-10-05 于 DSH 0.2.1-alpha.1 复核：`dsh-client-ui-plugin-manager` 的 Plugins 面板以 `packages = listBundles().map(bundle => packageView(bundle, plugins))` 组卡，行只挂在自己 bundle 的卡片内；`dsh-plugin-manager` 的 `listBundles()` 对**非 bundle 依赖**只在它同时被选入 `dsh.profile.bundles` 时才列出（且以 `not-bundle` 错误呈现），而 `bundleManifest()` 只认声明了 `package.json.dsh.bundle.patch` 的包。因此"普通依赖 + 手写 `insert` 行"这种交付方式虽然能正常挂载，却在插件页完全不可见，也没有启停入口；设置里的只读「插件列表」虽然直接读 Loader 因而能看到该行，但那是诊断视图而非管理入口。
 
 本仓库据此把交付形态改为标准 bundle 层（见 [ADR 0003](<adr/0003-ship-as-profile-bundle.md>)），不再等待上游改变这一缺口；上游是否给"无主 Loader 行"提供视图不影响本插件的安装与可见性。此观察只记录事实与影响范围，不作为阻塞项，也不推断 master 行为。
+
+## 复核记录：2026-10-23 停靠 live Agent 导致 goal 饥饿（LMGateX 实测）
+
+- Session `session-a367562c-9071-4f62-b261-5854938f16e4`（workspace `LMGateX`）。
+- Goal `goal-a8c558b3-2aed-4f5a-a318-fc987aa4e236` 创建于 2026-10-23 02:33:37 +08；创建后 14h56m 内 0 个 `<goal_round>`，`roundsStarted` 仍为 0。
+- 16:53:32 父 session 的 turn 567 正常结束。17:19:15/17:19:36 两个 review 子 `d48a0ce9` / `eef2afe8` 收到父 `c170ae89` 的 `next-step`；17:19:42 被 `interrupt_agent` abort，消息保留在 inbox。两个 review 子的 live Agent 与 `c170ae89` 都保持 resident（进程仍持有四个 `session.lock`）。17:19:55 `c170ae89` turn 9 正常结束，但 settlement 在等 `ownedChildren`，父一直没有收到它的 settlement notice。
+- 0.2.1-rc.2 的 `waitForChildren` 对 `idle + ownedChildren resident` 和 `idle + pending inbox` 都 `continue`，所以官方 driver 在这里会放行；插件的 `hasDescendant` / `epochRefs` 仍把停靠子算成 live work。replacement 的 `allows=false` 只 return 不 disarm，goal 保持 active+armed 却没有轮次；`maxHoldMs` 是 activation-only，replacement 不接受。
+- 修复：replacement 在 `profile.driver.joinsProgressingDescendants` 为 true 的 pin 上不再安装 descendant/epoch guard，由宿主 join 负责 subagent；Job guard 保留。新增 `background-work.test.ts` 的 native-join 用例，并同步 [ADR-0001](<adr/0001-retain-activation-gate.md>) 与 `docs/startup-driver.md`。`activation` 策略保留旧语义；遇到同类停靠可显式设 `waitForSubagents=false`。
+- 验证：typecheck 与 build 通过；开发宿主 0.2.0-rc.2 全套 144/144 通过。alpha.3+ 真实宿主的 e2e 本轮未重跑（开发宿主是 rc.2，完整 alpha suite 需要按 `check:hosts` 的隔离安装执行）；此前 0.4.20 的 alpha.4 记录为 136 项中 134 通过、2 跳过，本次没有改动宿主身份表。
 

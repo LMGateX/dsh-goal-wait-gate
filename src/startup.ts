@@ -71,7 +71,7 @@ export async function apply(ctx: Context, config: StartupConfig = {}): Promise<v
         await ownership.mount({
           name: resolved.strategy === 'replacement' ? 'goal-wait-owned-replacement-driver' : 'goal-wait-owned-native-compatible-driver',
           apply(driverCtx: Context) {
-            driver = installNativeDriver(driverCtx, resolved.strategy === 'replacement' ? createBackgroundPolicy(driverCtx, resolved) : undefined, profile.driver)
+            driver = installNativeDriver(driverCtx, resolved.strategy === 'replacement' ? createBackgroundPolicy(driverCtx, resolved, { nativeSubagentJoin: profile.driver.joinsProgressingDescendants }) : undefined, profile.driver)
           },
         }, fiber => { child = fiber })
       }
