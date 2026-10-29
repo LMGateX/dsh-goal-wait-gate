@@ -195,4 +195,32 @@ rc.2 开发宿主 143/143（新增 4 项：作业计数播种与事件更新、�
 
 验证：typecheck 与 build 通过；0.2.0-rc.2 开发宿主全套 144/144 通过（新增 native-join policy 用例）；修复后的 tarball 在真实 0.2.1-rc.2 CLI 的一次性 DSH home 内跑 `replacement` e2e，12/12 通过，无 fallback。未重跑 alpha.3+ 真实宿主的完整 suite；宿主身份表与 provenance 未改。
 
+## 0.2.2-alpha.2 支持核对（0.4.22 分支）
+
+2026-10-29 在 `/tmp` 的一次性 DSH home 与独立 npm prefix 中完成。未写入本机 live profile，未在本机安装插件，未发版。
+
+宿主差异：
+
+- `dsh-goal-round-driver/lib/index.js` 与 0.2.1-rc.2 逐字节相同（SHA-256 `255483fb…953ec7f1ff92`）；`dsh-jobs/lib/index.js` 也相同，subagent 的 `waitForChildren` 实现逐行相同。continuation 的调度 seam 没有变化。
+- 0.2.2 改的是宿主运行面：Node 下限提高到 24.9，Cordis 到 4.0.6-alpha.1；goal 与 subagent 改为异步 session projection 注册；agent 在 pre-step 增加 `modelSelection` 并引入 `agent.model`；subagent settlement 省略重复的 closing text；普通会话分支不再被识别为子代理；native 与 PTC 工具执行拆成独立插件。
+- 插件实际使用的公开 seam（`goals` 的 activation、`agents`/`jobs`、`subagent/start`/`end`、`waitForChildren`、`webServer`、`internal/plugin`）在 0.2.2 上保持兼容；`src/` 对 0.2.2 声明类型检查通过。
+
+适配改动：
+
+- `supportedHosts` 增加 `0.2.2-alpha.2`：与 rc.2 相同的 driver SHA 与 behavior，Cordis 改为 `4.0.6-alpha.1`。
+- `check-host-compat` 矩阵增加该宿主及其真实 Cordis 版本。
+- e2e 安装本地 tarball 时先把它复制到 profile：0.2.2 的 installer 会把 `file:` 依赖改写为 profile 相对路径，但不再负责把 tarball 复制进去；旧 installer 也接受该布局。
+- native fixture 在宿主发布 `@deepseek-ai/dsh-tool-executor-native` 时挂载它。0.2.2 把工具执行从 `dsh-tools` 拆出；不挂载时 fixture 在 pre-step 报 `TOOL_EXECUTOR_UNAVAILABLE`，这不是插件行为失败。旧 pin 没有该包，条件挂载保持原行为。
+
+实测结果（本机）：
+
+- 0.2.0-rc.2 开发宿主：全套 145/145（新增 0.2.2 身份选择与 queued-round 行为断言）。
+- 真实 0.2.2-alpha.2 包组成的隔离 realm：145 项中 143 通过、2 跳过、0 失败；跳过项仍是宿主不再发布 one-shot 后台工具模式的两项既有场景。
+- `check-startup-host`：0.2.2 安装报 pinned，331 个宿主包链接下 `src/` 类型检查通过。
+- `check-host-compat 0.2.2-alpha.2`：通过（按宿主装 Cordis 4.0.6-alpha.1，peer ranges 接受预发布版本）。
+- 真实 0.2.2 CLI 的 e2e（/tmp 一次性 DSH home）：`replacement`、`replacement --stale-peers`、`activation`、`native`、`off` 各 12 项全绿；`replacement` 状态记录 `distribution=0.2.2-alpha.2`、`cordis=4.0.6-alpha.1`、`driverSha256=255483fb…`、无 fallback。
+- `check:bundle`、`check:settings`、`check:client`：通过；bundle 行仍只出现一次，host `goal-round-driver` 行仍被同一层禁用。
+
+未做：本机 live profile 安装、GitHub 发布、GUI 与真实模型会话验证。
+
 

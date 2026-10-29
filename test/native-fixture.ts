@@ -77,6 +77,20 @@ async function mountHostProviders(ctx: Context): Promise<void> {
   }
 }
 
+/**
+ * 0.2.2 splits tool execution into a separately selected plugin. Mount the
+ * native executor when this host publishes it; older pins execute inside the
+ * tools service itself and publish no such package.
+ */
+async function mountNativeExecutor(ctx: Context): Promise<void> {
+  const specifier: string = '@deepseek-ai/dsh-tool-executor-native'
+  let manifest: string
+  try { manifest = fileURLToPath(import.meta.resolve(specifier + '/package.json')) } catch { return }
+  if (!existsSync(manifest)) return
+  const module = await import(specifier) as Plugin & {default?: Plugin}
+  await ctx.plugin(module.default ?? module)
+}
+
 /** One background-child request, as the host under test declares it. */
 export type BackgroundChildSpec = Parameters<Context['subagents']['startContinuable']>[0]
 
@@ -144,6 +158,7 @@ export class NativeFixture {
     await ctx.plugin(Llm)
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(Tools)
+    await mountNativeExecutor(ctx)
     await ctx.plugin(Loop)
     await ctx.plugin(Goals)
     await ctx.plugin(Jobs)

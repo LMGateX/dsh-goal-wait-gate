@@ -13,9 +13,9 @@
  *                                       [--stale-peers] [--tarball <path>] [--keep]
  */
 import { spawnSync, spawn } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -84,10 +84,15 @@ console.log('e2e: tarball=' + tarball)
 let child
 try {
   mkdirSync(profile, { recursive: true })
+  // 0.2.2's installer rewrites a local file dependency to a profile-relative
+  // path but does not copy the artifact into the profile. Place the tarball
+  // where the rewritten spec resolves, so this check works on both installers.
+  const tarballName = basename(tarball)
+  copyFileSync(tarball, join(profile, tarballName))
   writeFileSync(join(profile, 'package.json'), JSON.stringify({
     name: 'dsh-profile-e2e',
     private: true,
-    dependencies: { 'dsh-goal-wait-gate': 'file:' + tarball },
+    dependencies: { 'dsh-goal-wait-gate': 'file:./' + tarballName },
     dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'dsh-goal-wait-gate'] } },
   }, null, 2) + '\n')
   writeFileSync(join(profile, 'cordis.patch.yml'), [

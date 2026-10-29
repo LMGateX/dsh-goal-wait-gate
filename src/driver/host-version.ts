@@ -86,6 +86,16 @@ export const supportedHosts: readonly HostProfile[] = [
     driverSha256: '255483fbf86bed0dac5f641d89684de1933695e2c034475b2fa3953ec7f1ff92',
     driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true },
   },
+  // 0.2.2-alpha.2 raises the host runtime floor to Node 24.9 and moves Cordis
+  // to 4.0.6-alpha.1, but republishes the same continuation driver bundle
+  // byte-for-byte (identical SHA-256). The ported behavior therefore carries
+  // over unchanged; only the identity grows a row.
+  {
+    distribution: '0.2.2-alpha.2',
+    cordis: '4.0.6-alpha.1',
+    driverSha256: '255483fbf86bed0dac5f641d89684de1933695e2c034475b2fa3953ec7f1ff92',
+    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true },
+  },
 ]
 
 /** Packages whose exact version must equal the detected distribution version. */

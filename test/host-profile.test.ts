@@ -21,6 +21,7 @@ const alpha3 = profileFor('0.2.1-alpha.3')
 const alpha4 = profileFor('0.2.1-alpha.4')
 const rc1 = profileFor('0.2.1-rc.1')
 const rc2 = profileFor('0.2.1-rc.2')
+const alpha22 = profileFor('0.2.2-alpha.2')
 
 /** Pinned profile of the host this suite really runs on; the same suite must pass on each. */
 function detectInstalledProfile(): HostProfile {
@@ -87,6 +88,7 @@ test('artifact identity selects the exact ported behavior of that pinned host', 
   assert.deepEqual(matchHostProfile(facts(alpha4)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true })
   assert.deepEqual(matchHostProfile(facts(rc1)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true })
   assert.deepEqual(matchHostProfile(facts(rc2)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true })
+  assert.deepEqual(matchHostProfile(facts(alpha22)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true })
   assert.equal(matchHostProfile(facts(alpha, { '@deepseek-ai/dsh-session': alpha.distribution })).distribution, '0.2.1-alpha.1')
 })
 
@@ -109,6 +111,12 @@ test('a byte-identical republish is a new identity with the same ported behavior
   assert.equal(rc1.driverSha256, alpha4.driverSha256)
   assert.notEqual(rc1.cordis, alpha4.cordis)
   assert.deepEqual(matchHostProfile(facts(rc1)).driver, alpha4.driver)
+  // 0.2.2-alpha.2 republishes the rc.1/rc.2 driver while Cordis moves to the
+  // 4.0.6 alpha line: a new identity with the same ported behavior.
+  assert.notEqual(alpha22.distribution, rc2.distribution)
+  assert.equal(alpha22.driverSha256, rc2.driverSha256)
+  assert.notEqual(alpha22.cordis, rc2.cordis)
+  assert.deepEqual(matchHostProfile(facts(alpha22)).driver, rc2.driver)
   // The fingerprint identifies the artifact, the version identifies the
   // distribution: a republish under an unpinned version is still refused.
   assert.throws(
@@ -192,6 +200,24 @@ test('a pinned 0.2.1-rc.1 identity is detected and retires the unclaimed queued 
     assert.equal(h.mainCalls, 0)
   } finally { t.mock.restoreAll(); syncBuiltinESMExports(); await h.dispose() }
 })
+test('a pinned 0.2.2-alpha.2 identity is detected and retires the unclaimed queued round', async t => {
+  simulateHost(t, alpha22)
+  const h = await new NativeFixture().initialize()
+  try {
+    assert.equal(getStartupState(h.ctx)?.host?.distribution, '0.2.2-alpha.2')
+    assert.equal(getStartupState(h.ctx)?.host?.driverSha256, alpha22.driverSha256)
+    // The new distribution moves Cordis but republishes the rc.1/rc.2 driver,
+    // so the queued-round behavior carries over unchanged.
+    assert.equal(alpha22.driverSha256, rc2.driverSha256)
+    assert.equal(alpha22.driver.removeCancelledQueuedMessage, rc2.driver.removeCancelledQueuedMessage)
+    const observed = await cancelQueuedRound(h)
+    assert.equal(observed.parked, false)
+    assert.equal(h.goal?.phase, 'paused')
+    assert.equal(h.goal?.roundsStarted, 0)
+    assert.equal(h.mainCalls, 0)
+  } finally { t.mock.restoreAll(); syncBuiltinESMExports(); await h.dispose() }
+})
+
 test('an unpinned newer host is refused before any driver is mounted', async t => {
   simulateHost(t, { ...alpha, distribution: '0.2.2-alpha.0' })
   const h = new NativeFixture()

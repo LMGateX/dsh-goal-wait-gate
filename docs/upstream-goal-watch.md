@@ -206,6 +206,28 @@ Related evidence and ADR: ADR-0001、ADR-0002、docs/startup-driver.md、src/dri
 
 结论：rc.2 是本系列里最窄的一次变更——对 goal continuation 面零改动（driver 与全部 continuation 包逐字节相同），改动只在 Web 搜索与模型标签；插件适配只剩一行身份。上游补齐发布后，真实 rc.2 CLI 上的两种策略 e2e 均通过，其余检查在真实 rc.2 continuation 包上完成。
 
+## 复核记录：DSH 0.2.2-alpha.2
+
+按上文模板填写；只使用发布包内可核对的证据，不推断 master。
+
+```text
+DSH version / upstream commit or package evidence: 0.2.2-alpha.2（GitHub release dsh-v0.2.2-alpha.2；npm 同版本）；driver 身份以 dsh-goal-round-driver 0.2.2-alpha.2 的 lib/index.js 为准（SHA-256 255483fb…953ec7f1ff92，与 0.2.1-rc.2 逐字节相同），并与 rc.2 逐包比较 goal-round-driver、goal、agent、agent-loop、jobs、jobs-local、tool-jobs、subagent、tool-subagent、session、session-projection、llm、scope、system-prompt、tools、app-boot 与 cordis
+Plugin version / commit: 0.4.22 分支 feat/dsh-0.2.2-alpha-support（本次 pin；未发版）
+Changes in scheduling seam: 无。driver 的 lib/index.js 与 rc.2 逐字节相同；subagent 的 waitForChildren 实现逐行相同，仍只 join 进行中的后代并跳过 idle parked inbox。
+Changes in phase / activation / revision / ownership: goal 的公开 API 与 activation 语义未变；0.2.2 只把 goal/subagent 的 session projection 改为异步注册（Service.init），插件不直接注册 projection。
+Changes in edit and completion authority: 无行为变化。tool-goal 改用 ctx.agents.turnBoundaryOf 并移除若干冗余参数校验，edit/pause/resume/complete/blocked 的直接人类输入与完成权威未变。
+Changes in model-visible goal context: 无（driver 的 prompt 资产随同一 bundle 保持不变）。
+Changes in jobs / subagent lifecycle: dsh-jobs 的 lib/index.js 逐字节相同；subagent 改为在 settlement 中省略已由子代理最后一条消息转达的 closing text，并修正普通会话分支不再被识别为子代理。两者都不改变 waitForChildren 的 join 判据，也不改变 subagent/start、subagent/end 与 live Agent 的注册生命周期。dsh-invariants 与 dsh-subagent-in-process-driver 仍不随发行版提供。
+New in this release（与 goal 无关但影响插件交付）: Node 下限提高到 24.9；Cordis 4.0.6-alpha.1（配置 getter 与生命周期初始化变化）；异步 projection 句柄；pre-step 增加 modelSelection、agent 引入 model；native 与 PTC 工具执行拆成独立插件；普通会话分支独立运行；插件管理页与 Web 端大量 UI 改动。
+Automated checks actually run and results: typecheck 通过；0.2.0-rc.2 开发宿主 145/145 通过（新增 0.2.2 身份选择与 queued-round 行为断言）；真实 0.2.2-alpha.2 包组成的隔离 realm 同一套 145 项中 143 通过、2 跳过、0 失败（跳过项为宿主不再发布 one-shot 后台工具模式的既有场景）；check-startup-host 对该安装报 pinned 0.2.2-alpha.2、331 个宿主包链接下 src/ 类型检查通过；check-host-compat 0.2.2-alpha.2 通过（按宿主装 Cordis 4.0.6-alpha.1）；check:bundle/check:settings/check:client 通过。
+Isolated integration scenarios actually run and results: 在 /tmp 的一次性 DSH home 内用真实 @deepseek-ai/dsh@0.2.2-alpha.2 CLI 跑 scripts/e2e-isolated.mjs，replacement、replacement --stale-peers、activation、native、off 各 12 项检查全绿；replacement 状态记录 host.distribution=0.2.2-alpha.2、cordis=4.0.6-alpha.1、driverSha256=255483fb…、无 fallback。0.2.2 的 installer 会把本地 file: 依赖改写为 profile 相对路径，因此 e2e 先把 tarball 复制进 profile；native fixture 在该宿主发布 dsh-tool-executor-native 时挂载它。
+Skipped checks / limitations / unresolved risks: 未验证 GUI 与真实模型会话；两项 one-shot 后台工具场景仍因宿主不发布该模式而跳过。核对阶段未写入本机 live profile，未安装、未发版。
+Decision: 新增 0.2.2-alpha.2 pin——与 rc.2 同 fingerprint、同 behavior，Cordis 变为 4.0.6-alpha.1；保留闸门，driver port 与 provenance 未改。
+Related evidence and ADR: ADR-0001、ADR-0002、docs/startup-driver.md、docs/implementation-validation.md、src/driver/provenance.json
+```
+
+结论：0.2.2-alpha.2 对 goal continuation 的调度面仍是零改动，变化集中在宿主运行时、异步 projection、模型选择与工具执行拆分。插件只需新增身份 pin、兼容矩阵与测试夹具适配；真实 0.2.2 包上的 143 项通过（2 项既有跳过）和五种 e2e 挂载路径证明交付与既有行为在该发行版上仍然成立。
+
 ## 观察记录：插件页只渲染 bundle，不属于 bundle 的 Loader 行没有入口
 
 2026-10-05 于 DSH 0.2.1-alpha.1 复核：`dsh-client-ui-plugin-manager` 的 Plugins 面板以 `packages = listBundles().map(bundle => packageView(bundle, plugins))` 组卡，行只挂在自己 bundle 的卡片内；`dsh-plugin-manager` 的 `listBundles()` 对**非 bundle 依赖**只在它同时被选入 `dsh.profile.bundles` 时才列出（且以 `not-bundle` 错误呈现），而 `bundleManifest()` 只认声明了 `package.json.dsh.bundle.patch` 的包。因此"普通依赖 + 手写 `insert` 行"这种交付方式虽然能正常挂载，却在插件页完全不可见，也没有启停入口；设置里的只读「插件列表」虽然直接读 Loader 因而能看到该行，但那是诊断视图而非管理入口。
