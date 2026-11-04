@@ -22,6 +22,7 @@ const alpha4 = profileFor('0.2.1-alpha.4')
 const rc1 = profileFor('0.2.1-rc.1')
 const rc2 = profileFor('0.2.1-rc.2')
 const alpha22 = profileFor('0.2.2-alpha.2')
+const alpha23 = profileFor('0.2.2-alpha.3')
 
 /** Pinned profile of the host this suite really runs on; the same suite must pass on each. */
 function detectInstalledProfile(): HostProfile {
@@ -81,14 +82,15 @@ async function cancelQueuedRound(h: NativeFixture): Promise<{ parked: boolean }>
 }
 
 test('artifact identity selects the exact ported behavior of that pinned host', () => {
-  assert.deepEqual(matchHostProfile(facts(baseline)).driver, { removeCancelledQueuedMessage: false, joinsProgressingDescendants: false })
-  assert.deepEqual(matchHostProfile(facts(alpha)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: false })
-  assert.deepEqual(matchHostProfile(facts(alpha2)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: false })
-  assert.deepEqual(matchHostProfile(facts(alpha3)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true })
-  assert.deepEqual(matchHostProfile(facts(alpha4)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true })
-  assert.deepEqual(matchHostProfile(facts(rc1)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true })
-  assert.deepEqual(matchHostProfile(facts(rc2)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true })
-  assert.deepEqual(matchHostProfile(facts(alpha22)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true })
+  assert.deepEqual(matchHostProfile(facts(baseline)).driver, { removeCancelledQueuedMessage: false, joinsProgressingDescendants: false, disarmsOnDisposedAbort: false })
+  assert.deepEqual(matchHostProfile(facts(alpha)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: false, disarmsOnDisposedAbort: false })
+  assert.deepEqual(matchHostProfile(facts(alpha2)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: false, disarmsOnDisposedAbort: false })
+  assert.deepEqual(matchHostProfile(facts(alpha3)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true, disarmsOnDisposedAbort: false })
+  assert.deepEqual(matchHostProfile(facts(alpha4)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true, disarmsOnDisposedAbort: false })
+  assert.deepEqual(matchHostProfile(facts(rc1)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true, disarmsOnDisposedAbort: false })
+  assert.deepEqual(matchHostProfile(facts(rc2)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true, disarmsOnDisposedAbort: false })
+  assert.deepEqual(matchHostProfile(facts(alpha22)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true, disarmsOnDisposedAbort: false })
+  assert.deepEqual(matchHostProfile(facts(alpha23)).driver, { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true, disarmsOnDisposedAbort: true })
   assert.equal(matchHostProfile(facts(alpha, { '@deepseek-ai/dsh-session': alpha.distribution })).distribution, '0.2.1-alpha.1')
 })
 
@@ -117,6 +119,13 @@ test('a byte-identical republish is a new identity with the same ported behavior
   assert.equal(alpha22.driverSha256, rc2.driverSha256)
   assert.notEqual(alpha22.cordis, rc2.cordis)
   assert.deepEqual(matchHostProfile(facts(alpha22)).driver, rc2.driver)
+  // 0.2.2-alpha.3 is not a republish: the same distribution line ships a new
+  // driver bundle (the disposal-abort rule) and Cordis moves to 4.0.6-alpha.2.
+  assert.notEqual(alpha23.distribution, alpha22.distribution)
+  assert.notEqual(alpha23.driverSha256, alpha22.driverSha256)
+  assert.notEqual(alpha23.cordis, alpha22.cordis)
+  assert.equal(alpha23.driver.disarmsOnDisposedAbort, true)
+  assert.equal(alpha22.driver.disarmsOnDisposedAbort, false)
   // The fingerprint identifies the artifact, the version identifies the
   // distribution: a republish under an unpinned version is still refused.
   assert.throws(
@@ -215,6 +224,45 @@ test('a pinned 0.2.2-alpha.2 identity is detected and retires the unclaimed queu
     assert.equal(h.goal?.phase, 'paused')
     assert.equal(h.goal?.roundsStarted, 0)
     assert.equal(h.mainCalls, 0)
+  } finally { t.mock.restoreAll(); syncBuiltinESMExports(); await h.dispose() }
+})
+
+test('a pinned 0.2.2-alpha.3 identity disarms instead of pausing when its agent is disposed mid-round', async t => {
+  simulateHost(t, alpha23)
+  const h = await new NativeFixture().initialize()
+  const activations: string[] = []
+  h.ctx.on('goal/activation-changed', ({ goal }) => { if (goal !== undefined) activations.push(goal.activation) })
+  try {
+    assert.equal(getStartupState(h.ctx)?.host?.distribution, '0.2.2-alpha.3')
+    assert.equal(getStartupState(h.ctx)?.host?.driverSha256, alpha23.driverSha256)
+    h.createGoal(3)
+    await h.until(() => h.mainCalls === 1, 'one admitted goal round')
+    await h.handle.dispose()
+    await h.settle()
+    // Disposal aborts the round with the disposed cause, which is no pause
+    // decision: the durable phase keeps its single create and only continuation
+    // is disarmed. A pause would be recorded as a second goal/change operation.
+    const operations = h.events.flatMap(event => event.type === 'goal/change' ? [event.data.operation] : [])
+    assert.deepEqual(operations, ['create'])
+    assert.equal(activations.at(-1), 'disarmed')
+  } finally { t.mock.restoreAll(); syncBuiltinESMExports(); await h.dispose() }
+})
+
+test('the pinned pre-alpha.3 host pauses when its agent is disposed mid-round', async t => {
+  simulateHost(t, alpha22)
+  const h = await new NativeFixture().initialize()
+  const activations: string[] = []
+  h.ctx.on('goal/activation-changed', ({ goal }) => { if (goal !== undefined) activations.push(goal.activation) })
+  try {
+    h.createGoal(3)
+    await h.until(() => h.mainCalls === 1, 'one admitted goal round')
+    await h.handle.dispose()
+    await h.settle()
+    // Before 0.2.2-alpha.3 the disposed abort was treated as an ordinary
+    // cancellation of a running round: the driver paused the goal at idle.
+    const operations = h.events.flatMap(event => event.type === 'goal/change' ? [event.data.operation] : [])
+    assert.deepEqual(operations, ['create', 'pause'])
+    assert.equal(activations.at(-1), 'disarmed')
   } finally { t.mock.restoreAll(); syncBuiltinESMExports(); await h.dispose() }
 })
 

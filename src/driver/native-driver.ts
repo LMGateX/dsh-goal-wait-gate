@@ -1,5 +1,5 @@
 // Derived from the published @deepseek-ai/dsh-goal-round-driver bundles
-// 0.2.0-rc.2, 0.2.1-alpha.1, and 0.2.1-alpha.3. Copyright (c) 2026 DeepSeek. MIT; see
+// 0.2.0-rc.2, 0.2.1-alpha.1, 0.2.1-alpha.3 and 0.2.2-alpha.3. Copyright (c) 2026 DeepSeek. MIT; see
 // UPSTREAM-LICENSE.txt and provenance.json.
 import { isDeepStrictEqual } from 'node:util';
 import type { Context } from '@deepseek-ai/cordis';
@@ -29,6 +29,8 @@ export interface DriverBehavior {
 	readonly removeCancelledQueuedMessage: boolean;
 	/** 0.2.1-alpha.3 reserves a round only after the agent's progressing descendants settle. */
 	readonly joinsProgressingDescendants: boolean;
+	/** 0.2.2-alpha.3 treats a disposal abort as unload: it disarms and never pauses the goal. */
+	readonly disarmsOnDisposedAbort: boolean;
 }
 /**
 * The 0.2.1-alpha.3 subagent seam this port joins before reserving a round.
@@ -370,6 +372,12 @@ export function installNativeDriver(ctx: Context, policy: DriverPolicy | undefin
 						return;
 					}
 					if (event.data.reason.kind !== "aborted") return;
+					// Agent disposal aborts the round without a pause decision, so continuation
+					// is only disarmed and the durable phase stays active, as on driver unload.
+					if (behavior.disarmsOnDisposedAbort && event.data.reason.reason.kind === "disposed") {
+						disarm(state);
+						return;
+					}
 					if (state.attempt?.phase === "claimed" || state.attempt?.phase === "admitted") state.attempt.cancelled = true;
 					else disarm(state);
 					return;

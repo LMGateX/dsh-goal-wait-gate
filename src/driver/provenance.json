@@ -39,6 +39,19 @@
       "companion": null,
       "behavior": "Additionally joins the agent's progressing descendants through the optional subagent service before reserving a round, and stops waiting when the plugin unloads; the queued-round settlement behavior of 0.2.1-alpha.1 is unchanged.",
       "sourceBasis": "Exact published package bundle; no upstream revision inferred from master."
+    },
+    {
+      "package": "@deepseek-ai/dsh-goal-round-driver",
+      "version": "0.2.2-alpha.3",
+      "license": "MIT",
+      "copyright": "Copyright (c) 2026 DeepSeek",
+      "repository": "https://github.com/deepseek-ai/deepseek-harness",
+      "repositoryDirectory": "packages/goal/goal-round-driver",
+      "artifact": "lib/index.js",
+      "sha256": "1a1cb44cd44363965aca4a288c052df50e6adff0ffdafd0a81fed97b4a7589de",
+      "companion": null,
+      "behavior": "Additionally treats an abort caused by Agent disposal (a graceful process shutdown or a reload of the plugin that owns the Agent) as unload: continuation is disarmed and the durable goal stays active, while user, parent and hook cancellations still pause it. The descendant join and queued-round settlement of earlier pins are unchanged.",
+      "sourceBasis": "Exact published package bundle; no upstream revision inferred from master."
     }
   ],
   "selection": "The host profile is matched from the resolved bundle version and SHA-256 together; the same port reproduces the pinned behavior of exactly one published artifact, and an unpinned distribution is refused before any driver is mounted.",

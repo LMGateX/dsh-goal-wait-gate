@@ -32,13 +32,13 @@ export const supportedHosts: readonly HostProfile[] = [
     distribution: '0.2.0-rc.2',
     cordis: '4.0.4',
     driverSha256: '3bca01a2e87de1683fa8b55ad54688eefc4e366c971c20e9afd654db3b5ab450',
-    driver: { removeCancelledQueuedMessage: false, joinsProgressingDescendants: false },
+    driver: { removeCancelledQueuedMessage: false, joinsProgressingDescendants: false, disarmsOnDisposedAbort: false },
   },
   {
     distribution: '0.2.1-alpha.1',
     cordis: '4.0.5-alpha.1',
     driverSha256: '68ed09208a7abe4e8722bc0e6ac666383046ed37dc8a4e6a0795234317c69cf8',
-    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: false },
+    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: false, disarmsOnDisposedAbort: false },
   },
   // 0.2.1-alpha.2 moves the distribution version while publishing the very same
   // native goal driver bundle (identical SHA-256, identical Cordis), so the
@@ -47,7 +47,7 @@ export const supportedHosts: readonly HostProfile[] = [
     distribution: '0.2.1-alpha.2',
     cordis: '4.0.5-alpha.1',
     driverSha256: '68ed09208a7abe4e8722bc0e6ac666383046ed37dc8a4e6a0795234317c69cf8',
-    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: false },
+    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: false, disarmsOnDisposedAbort: false },
   },
   // 0.2.1-alpha.3 republishes the driver bundle with the descendant join: a
   // round is reserved only after the agent's progressing descendants settle.
@@ -56,7 +56,7 @@ export const supportedHosts: readonly HostProfile[] = [
     distribution: '0.2.1-alpha.3',
     cordis: '4.0.5-alpha.2',
     driverSha256: '255483fbf86bed0dac5f641d89684de1933695e2c034475b2fa3953ec7f1ff92',
-    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true },
+    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true, disarmsOnDisposedAbort: false },
   },
   // 0.2.1-alpha.4 moves the distribution version again while republishing that
   // very same driver bundle (identical SHA-256, identical Cordis), so the
@@ -65,7 +65,7 @@ export const supportedHosts: readonly HostProfile[] = [
     distribution: '0.2.1-alpha.4',
     cordis: '4.0.5-alpha.2',
     driverSha256: '255483fbf86bed0dac5f641d89684de1933695e2c034475b2fa3953ec7f1ff92',
-    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true },
+    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true, disarmsOnDisposedAbort: false },
   },
   // 0.2.1-rc.1 moves the distribution to the release candidate while publishing
   // that very same driver bundle; only Cordis graduates, from 4.0.5-alpha.2 to
@@ -75,7 +75,7 @@ export const supportedHosts: readonly HostProfile[] = [
     distribution: '0.2.1-rc.1',
     cordis: '4.0.5',
     driverSha256: '255483fbf86bed0dac5f641d89684de1933695e2c034475b2fa3953ec7f1ff92',
-    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true },
+    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true, disarmsOnDisposedAbort: false },
   },
   // 0.2.1-rc.2 is the next candidate on the same bundle: its release only moved
   // the Web search and model-label plugins, leaving every continuation package
@@ -84,7 +84,7 @@ export const supportedHosts: readonly HostProfile[] = [
     distribution: '0.2.1-rc.2',
     cordis: '4.0.5',
     driverSha256: '255483fbf86bed0dac5f641d89684de1933695e2c034475b2fa3953ec7f1ff92',
-    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true },
+    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true, disarmsOnDisposedAbort: false },
   },
   // 0.2.2-alpha.2 raises the host runtime floor to Node 24.9 and moves Cordis
   // to 4.0.6-alpha.1, but republishes the same continuation driver bundle
@@ -94,7 +94,18 @@ export const supportedHosts: readonly HostProfile[] = [
     distribution: '0.2.2-alpha.2',
     cordis: '4.0.6-alpha.1',
     driverSha256: '255483fbf86bed0dac5f641d89684de1933695e2c034475b2fa3953ec7f1ff92',
-    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true },
+    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true, disarmsOnDisposedAbort: false },
+  },
+  // 0.2.2-alpha.3 republishes the continuation driver with one changed rule:
+  // an abort caused by Agent disposal now disarms instead of parking the
+  // attempt for a pause, so a goal survives a graceful shutdown or an owner
+  // reload. Cordis moves to 4.0.6-alpha.2. The descendant join and queued-round
+  // settlement carry over unchanged.
+  {
+    distribution: '0.2.2-alpha.3',
+    cordis: '4.0.6-alpha.2',
+    driverSha256: '1a1cb44cd44363965aca4a288c052df50e6adff0ffdafd0a81fed97b4a7589de',
+    driver: { removeCancelledQueuedMessage: true, joinsProgressingDescendants: true, disarmsOnDisposedAbort: true },
   },
 ]
 

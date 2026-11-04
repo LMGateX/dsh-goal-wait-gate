@@ -87,10 +87,15 @@ export function watchOwners(ctx: Context, originalNative: Function, close: (erro
     }
     if (isKnownOwner(fiber, originalNative)) fail(new Error('Known goal continuation owner intrusion rejected'))
   }, { global: true, prepend: true })
-  ctx.root.on('internal/update', function (this: Fiber, _config: unknown, _noSave: boolean, next: () => void) {
+  // Cordis 4.0.6-alpha.2 removed the `noSave` argument from this waterfall, so
+  // the listener reads the continuation from the last argument instead of
+  // binding to one host's parameter list. Nothing else is consumed.
+  ctx.root.on('internal/update', function (this: Fiber, ...args: unknown[]) {
     if (this === owner || this === child || isKnownOwner(this, originalNative)) throw new Error('Startup ownership cannot update or hand off; restart the root')
-    return next()
-  }, { global: true, prepend: true })
+    const next = args.at(-1)
+    if (typeof next !== 'function') throw new Error('Startup ownership: internal/update has no continuation')
+    return (next as () => void)()
+  } as never, { global: true, prepend: true })
   return {
     async mount(plugin, captured) {
       const callback = ctx.registry.resolve(plugin)

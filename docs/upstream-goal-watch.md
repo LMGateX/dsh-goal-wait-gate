@@ -228,6 +228,27 @@ Related evidence and ADR: ADR-0001、ADR-0002、docs/startup-driver.md、docs/im
 
 结论：0.2.2-alpha.2 对 goal continuation 的调度面仍是零改动，变化集中在宿主运行时、异步 projection、模型选择与工具执行拆分。插件只需新增身份 pin、兼容矩阵与测试夹具适配；真实 0.2.2 包上的 143 项通过（2 项既有跳过）和五种 e2e 挂载路径证明交付与既有行为在该发行版上仍然成立。
 
+## 复核记录：DSH 0.2.2-alpha.3
+
+按上文模板填写；只使用发布包内可核对的证据，不推断 master。
+
+```text
+DSH version / upstream commit or package evidence: 0.2.2-alpha.3（GitHub release dsh-v0.2.2-alpha.3；npm 同版本；tag 指向 vendor 升级提交 05b1cae）；driver 身份以 dsh-goal-round-driver 0.2.2-alpha.3 的 lib/index.js 为准（SHA-256 1a1cb44c…b97b4a7589de），并与 0.2.2-alpha.2 发布物逐字节比较；上游 src 的 goal 面只有 goal-round-driver/src/index.ts 一处变化，goal/goal、tool-goal、command-goal 的 src 未变
+Plugin version / commit: 0.4.23 分支 feat/dsh-0.2.2-alpha-support（本次 pin；未发版）
+Changes in scheduling seam: driver 在 session/event 的 turn/end 处理中新增 Agent disposal 分支：aborted 原因若为 disposed，只 disarm，不把 attempt 标为 cancelled，因此不会在 idle 暂停 goal。轮次预留顺序、subagent waitForChildren 的 join 判据与 queued-round 结算均未变；driver 对 jobs 仍是零引用。
+Changes in phase / activation / revision / ownership: goal 的公开 API、activation 语义、phase/revision 规则均未变；disposed 中止只把进程内 activation 置为 disarmed，不改 durable phase。Cordis 从 4.0.6-alpha.1 升到 4.0.6-alpha.2。
+Changes in edit and completion authority: 无（tool-goal、command-goal 的 src 未变，只有包版本更新）。
+Changes in model-visible goal context: 无（driver prompt 资产与 renderer 未变）。
+Changes in jobs / subagent lifecycle: jobs、jobs-local、tool-jobs、subagent、tool-subagent 的 src 均未变（仅 package.json 版本）；agent/agent-loop 的 src 未变。session-projection 有实现变更，但 goal 的公开 view/activation 语义未变，插件不直接注册 projection。
+Automated checks actually run and results: typecheck 通过；0.2.0-rc.2 开发宿主 147/147 通过（新增 0.2.2-alpha.3 身份与 disposed-abort 行为断言，含旧 pin 的 pause 对照）；真实 0.2.2-alpha.3 包组成的隔离 realm 同一套 147 项中 145 通过、2 跳过、0 失败（跳过项仍是宿主不再发布 one-shot 后台工具模式的两项既有场景）；check-startup-host 对该安装报 pinned 0.2.2-alpha.3、331 个宿主包链接下 src/ 类型检查通过；check-host-compat 0.2.2-alpha.3 通过（按宿主装 Cordis 4.0.6-alpha.2）；check:bundle/check:settings/check:client 通过。
+Isolated integration scenarios actually run and results: 在 /tmp 的一次性 DSH home 内用真实 @deepseek-ai/dsh@0.2.2-alpha.3 CLI 跑 scripts/e2e-isolated.mjs，replacement、replacement --stale-peers、activation、native、off 各 12 项检查全绿；replacement 状态记录 host.distribution=0.2.2-alpha.3、cordis=4.0.6-alpha.2、driverSha256=1a1cb44c…、无 fallback。
+Skipped checks / limitations / unresolved risks: 未验证 GUI 与真实模型会话；两项 one-shot 后台工具场景仍因宿主不发布该模式而跳过。核对阶段未写入本机 live profile，未安装、未发版。alpha.3 的 disposed 分支只改变了“Agent 被处置”时的收尾；没有新增后台 job 感知，也没有公开 scheduling defer 契约。
+Decision: retain gate（job 维度仍无上游覆盖）；新增 0.2.2-alpha.3 pin，driver port 增加按身份选择的 disarmsOnDisposedAbort 行为，provenance 增加该发布物。
+Related evidence and ADR: ADR-0001、ADR-0002、docs/startup-driver.md、docs/implementation-validation.md、src/driver/provenance.json
+```
+
+结论：0.2.2-alpha.3 只改变“Agent 被处置时 goal 的续行处理”——从按取消处理（可能在 idle 暂停）改为只 disarm、保留 active；后台 job 仍完全不在 driver 的观察范围内。因此闸门仍然必要，适配是新的 driver fingerprint、Cordis 4.0.6-alpha.2、一个按身份选择的 port 行为，以及 Cordis `internal/update` 监听签名变化。真实 alpha.3 包上的 145 项通过（2 项既有跳过）、五种 e2e 挂载路径与 status 记录共同证明交付成立。
+
 ## 观察记录：插件页只渲染 bundle，不属于 bundle 的 Loader 行没有入口
 
 2026-10-05 于 DSH 0.2.1-alpha.1 复核：`dsh-client-ui-plugin-manager` 的 Plugins 面板以 `packages = listBundles().map(bundle => packageView(bundle, plugins))` 组卡，行只挂在自己 bundle 的卡片内；`dsh-plugin-manager` 的 `listBundles()` 对**非 bundle 依赖**只在它同时被选入 `dsh.profile.bundles` 时才列出（且以 `not-bundle` 错误呈现），而 `bundleManifest()` 只认声明了 `package.json.dsh.bundle.patch` 的包。因此"普通依赖 + 手写 `insert` 行"这种交付方式虽然能正常挂载，却在插件页完全不可见，也没有启停入口；设置里的只读「插件列表」虽然直接读 Loader 因而能看到该行，但那是诊断视图而非管理入口。

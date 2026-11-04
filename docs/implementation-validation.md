@@ -223,4 +223,33 @@ rc.2 开发宿主 143/143（新增 4 项：作业计数播种与事件更新、�
 
 未做：本机 live profile 安装、GitHub 发布、GUI 与真实模型会话验证。
 
+## 0.2.2-alpha.3 支持核对（0.4.23 分支）
+
+2026-11-04 在 `/tmp` 的一次性 DSH home、独立 npm prefix 与隔离 realm 中完成。未写入本机 live profile，未在本机安装插件，未发版。
+
+宿主差异：
+
+- `dsh-goal-round-driver/lib/index.js` 相对 alpha.2 只有一处变化：`turn/end` 的 `aborted` 原因若为 `disposed`，只 `disarm` 而不把 attempt 标记为 cancelled；SHA-256 从 `255483fb…` 变为 `1a1cb44c…b97b4a7589de`。该分支对应上游 `fix/goal-shutdown-pause`，使 graceful shutdown / owner reload 不再暂停 goal。
+- `dsh-goal`、`tool-goal`、`command-goal`、`agent`、`agent-loop`、`jobs`、`jobs-local`、`tool-jobs`、`subagent`、`tool-subagent` 的 src 均未变（只更新包版本）；driver 仍无 jobs 引用，也没有新增 scheduling defer。
+- Cordis 升到 4.0.6-alpha.2；`internal/update` waterfall 去掉了 `noSave` 参数。插件的 startup ownership guard 改为读取最后一个参数作为 continuation，同时兼容 4.0.4 / 4.0.6-alpha.2。
+- `session-projection` 有实现变更（异步 registration/registry），但 goal 公开 view/activation 未变；插件不直接注册 projection。
+
+适配改动：
+
+- `supportedHosts` 增加 `0.2.2-alpha.3`：driver SHA 更新，Cordis 4.0.6-alpha.2，新增 `disarmsOnDisposedAbort: true`；旧行补 `false`。
+- `native-driver.ts` 在 `session/event` 的 `turn/end` 分支按 flag 复现 disposed 行为；`provenance.json` 增加 alpha.3 发布物记录。
+- `check-host-compat` 矩阵增加 alpha.3 及其 Cordis 版本。
+- 测试新增 alpha.3 身份选择、disposed-abort 行为断言，以及旧 pin 的 pause 对照（`host-profile.test.ts`）。
+
+实测结果（本机）：
+
+- 0.2.0-rc.2 开发宿主：全套 147/147。
+- 真实 0.2.2-alpha.3 包组成的隔离 realm（/tmp，非仓库内）：147 项中 145 通过、2 跳过、0 失败；跳过项仍是宿主不再发布 one-shot 后台工具模式的两项既有场景。
+- `check-startup-host`：0.2.2-alpha.3 安装报 pinned（1a1cb44c…），331 个宿主包链接下 `src/` 类型检查通过。
+- `check-host-compat 0.2.2-alpha.3`：通过（按宿主装 Cordis 4.0.6-alpha.2，peer ranges 接受预发布版本）。
+- 真实 0.2.2-alpha.3 CLI 的 e2e（/tmp 一次性 DSH home）：`replacement`、`replacement --stale-peers`、`activation`、`native`、`off` 各 12 项全绿；`replacement` 状态记录 `distribution=0.2.2-alpha.3`、`cordis=4.0.6-alpha.2`、`driverSha256=1a1cb44c…`、无 fallback。
+- `check:bundle`、`check:settings`、`check:client`：通过；bundle 行仍只出现一次，host `goal-round-driver` 行仍被同一层禁用。
+
+未做：本机 live profile 安装、GitHub 发布、GUI 与真实模型会话验证。
+
 
